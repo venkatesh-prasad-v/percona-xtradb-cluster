@@ -199,12 +199,13 @@ my $DEFAULT_SUITES= "main,sys_vars,binlog,binlog_encryption,rpl_encryption,encry
   ."innodb_fts,innodb_zip,innodb_undo,innodb_stress,perfschema,funcs_1,"
   ."funcs_2,opt_trace,parts,auth_sec,query_rewrite_plugins,gcol,sysschema,"
   ."test_service_sql_api,jp,stress,engines/iuds,engines/funcs,"
-  ."group_replication,x,galera,"
+  ."group_replication,x,"
   ."query_response_time,audit_log,json,connection_control,"
   ."tokudb.add_index,tokudb.alter_table,tokudb,tokudb.bugs,tokudb.parts,"
   ."tokudb.rpl,tokudb.perfschema,"
   ."rocksdb,rocksdb_rpl,rocksdb_sys_vars,"
-  ."keyring_vault,audit_null,percona-pam-for-mysql";
+  ."keyring_vault,audit_null,percona-pam-for-mysql,"
+  ."galera,galera_3nodes";
 my $opt_suites;
 
 our $opt_verbose= 0;  # Verbose output, enable with --verbose
@@ -319,7 +320,7 @@ my $opt_skip_core;
 
 our $opt_check_testcases= 1;
 my $opt_mark_progress;
-our $opt_test_progress= 0;
+our $opt_test_progress= 1;
 my $opt_max_connections;
 our $opt_report_times= 0;
 
@@ -6105,20 +6106,26 @@ sub mysqld_arguments ($$$) {
 #    {
 #      ; # Dont add --binlog-format when running without binlog
 #    }
-    elsif ($arg eq "--loose-skip-log-bin")
-    {
-      if (grep { /--wsrep-provider=/ } @$extra_opts) {
+
+#    elsif (mtr_match_prefix($arg, "--binlog-format"))
+#    {
+#      if (grep { /--wsrep-provider=/ } @$extra_opts) {
         # As an exception, allow --binlog-format if MTR is run with
         # wsrep provider loaded.
-        mtr_add_arg($args, "%s", $arg);
-      } else {
-        ; # Dont add --binlog-format when running without binlog
-      }
-    }
+#        mtr_add_arg($args, "%s", $arg);
+#      } else {
+#        ; # Dont add --binlog-format when running without binlog
+#      }
+#    }
     elsif ($arg =~ /--loose[-_]skip[-_]log[-_]bin/ and
            $mysqld->option("log-slave-updates"))
     {
       ; # Dont add --skip-log-bin when mysqld have --log-slave-updates in config
+    }
+    elsif ($arg =~ /--loose[-_]skip[-_]log[-_]bin/ and
+	       (grep { /--wsrep-provider=/ } @$extra_opts))
+    {
+      ; # Dont add --skip-log-bin when wsrep provider loaded
     }
     elsif ($arg eq "")
     {
@@ -6543,6 +6550,15 @@ sub get_extra_opts {
   my $opts=
     $mysqld->option("#!use-slave-opt") ?
       $tinfo->{slave_opt} : $tinfo->{master_opt};
+
+  # For Galera and sys_vars tests skip --loose-skip-log-bin
+  my @galera_test = grep(/^galera\./, $tinfo->{name});
+  my @sys_vars_test = grep(/^sys_vars\./, $tinfo->{name});
+  if(@galera_test > 0 or @sys_vars_test > 0 )
+  {
+    my $skip_item = "--loose-skip-log-bin";
+    @$opts = grep { $_ ne $skip_item } @$opts;
+  }
 
   # Expand environment variables
   foreach my $opt ( @$opts )
