@@ -280,6 +280,8 @@ my @mysqld_rules=
  # Galera uses base_port + 1 for IST, so we do not use it for things such as SST
  { '#ist_port' => \&fix_port },
  { '#sst_port' => \&fix_port },
+ # Reserve a port for group_replication
+ { '#group_replication_port' => \&fix_port },
  { 'socket' => \&fix_socket },
  { 'loose-mysqlx-port' => \&fix_x_port },
  { 'loose-mysqlx-socket' => \&fix_x_socket },

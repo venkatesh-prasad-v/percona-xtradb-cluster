@@ -563,7 +563,7 @@ sub main {
 
   if ($group_replication)
   {
-    $ports_per_thread= $ports_per_thread + 10;
+    $ports_per_thread= $ports_per_thread + 40;
   }
 
   if ($xplugin)
@@ -6658,7 +6658,14 @@ sub start_servers($) {
     }
     else
     {
-      my $xcom_port= $baseport + 9 + $server_id;
+      # For PXC's MTR
+      #
+      # Port X   - Connection handling
+      # Port X+1 - Galera
+      # Port X+2 - IST
+      # Port X+3 - SST
+      # Port X+4 - Group Replication
+      my $xcom_port= $baseport + 5 * $server_id;
       $ENV{$xcom_server}= $xcom_port;
     }
 
