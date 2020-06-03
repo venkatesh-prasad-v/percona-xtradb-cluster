@@ -1989,9 +1989,9 @@ RecLock::add_to_waitq(const lock_t* wait_for, const lock_prdt_t* prdt)
     /* Allow high priority transactions to jump over the low priority locks and
      * rollback them if Galera is not loaded. */
 
-    int wsrep_loaded = wsrep_on(m_trx->mysql_thd);
-    bool priority = wsrep_loaded ? true : !high_priority;
-	if (wsrep_loaded &&
+    int wsrep_enabled = wsrep_on(m_trx->mysql_thd);
+    bool priority = wsrep_enabled ? true : !high_priority;
+	if (wsrep_enabled &&
 	    m_trx->lock.was_chosen_as_deadlock_victim) {
 		return(DB_DEADLOCK);
 	}
