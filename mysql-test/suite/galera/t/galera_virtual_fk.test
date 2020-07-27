@@ -1,0 +1,3 @@
+--source include/have_innodb.inc
+--source include/galera_cluster.inc
+--source suite/innodb/t/virtual_fk.test
