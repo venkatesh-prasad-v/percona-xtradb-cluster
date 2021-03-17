@@ -36,6 +36,7 @@
 #include "my_sys.h"
 #include "my_systime.h"
 #include "my_thread.h"
+#include "mysql/components/services/bits/psi_bits.h"
 #include "mysql/components/services/psi_cond_bits.h"
 #include "mysql/components/services/psi_memory_bits.h"
 #include "mysql/components/services/psi_mutex_bits.h"
@@ -45,7 +46,6 @@
 #include "mysql/psi/mysql_memory.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/mysql_stage.h"
-#include "mysql/psi/psi_base.h"
 #include "mysql/psi/psi_mdl.h"
 #include "mysql/service_thd_wait.h"
 #include "mysqld_error.h"
@@ -3625,14 +3625,7 @@ bool MDL_context::acquire_lock(MDL_request *mdl_request,
   /* There is a shared or exclusive lock on the object. */
   DEBUG_SYNC(get_thd(), "mdl_acquire_lock_wait");
 
-  /* We skip deadlock checks for ACL cache lock as there is severe contention
-  on internal RW lock of MDL lock. Since ACL cache lock is used during
-  connection process, all connections get stuck and will soon run out of
-  max_connections. All we need is good RW lock implementation. By removing this
-  deadlock checks, we remove contention on internal RW lock of MDL lock. This
-  means if ever there is deadlock due to code bug, we rely on
-  ACL_CACHE_LOCK_TIMEOUT value. */
-  if (mdl_request->key.mdl_namespace() != MDL_key::ACL_CACHE) find_deadlock();
+  find_deadlock();
 
   if (lock->needs_notification(ticket) || lock->needs_connection_check()) {
     struct timespec abs_shortwait;
@@ -4008,8 +4001,6 @@ bool MDL_lock::visit_subgraph(MDL_ticket *waiting_ticket,
   bool result = true;
 
   mysql_prlock_rdlock(&m_rwlock);
-
-  DEBUG_SYNC(src_ctx->get_thd(), "acl_mdl_dead_lock");
 
   /*
     Iterators must be initialized after taking a read lock.

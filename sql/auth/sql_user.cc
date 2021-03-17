@@ -43,6 +43,7 @@
 #include "my_sqlcommand.h"
 #include "my_sys.h"
 #include "my_time.h"
+#include "mysql/components/services/bits/psi_bits.h"
 #include "mysql/components/services/log_builtins.h"
 #include "mysql/components/services/log_shared.h"
 #include "mysql/mysql_lex_string.h"
@@ -50,7 +51,6 @@
 #include "mysql/plugin_audit.h"
 #include "mysql/plugin_auth.h"
 #include "mysql/psi/mysql_mutex.h"
-#include "mysql/psi/psi_base.h"
 #include "mysql_com.h"
 #include "mysql_time.h"
 #include "mysqld_error.h"
@@ -305,8 +305,6 @@ bool mysql_show_create_user(THD *thd, LEX_USER *user_name,
     commit_and_close_mysql_tables(thd);
     return true;
   }
-
-  DEBUG_SYNC(thd, "acl_s_lock");
 
   if (!(acl_user =
             find_acl_user(user_name->host.str, user_name->user.str, true))) {
