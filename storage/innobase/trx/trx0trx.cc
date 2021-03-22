@@ -247,8 +247,7 @@ static void trx_init(trx_t *trx) {
     trx->in_innodb &= TRX_FORCE_ROLLBACK_MASK;
   }
 #ifdef WITH_WSREP
-  query_id_t	query_id = trx->wsrep_killed_by_query;
-  os_compare_and_swap_thread_id(&trx->wsrep_killed_by_query, query_id, 0);
+  trx->wsrep_killed_by_query.store(0);
   trx->wsrep_UK_scan = false;
 #endif /* WITH_WSREP */
 
@@ -394,7 +393,7 @@ struct TrxFactory {
     ut_ad(trx->killed_by == 0);
 
 #ifdef WITH_WSREP
-    ut_ad(trx->wsrep_killed_by_query == 0);
+    ut_ad(trx->wsrep_killed_by_query.load() == 0);
     ut_ad(trx->wsrep_UK_scan == false);
 #endif /* WITH_WSREP */
 
@@ -704,7 +703,7 @@ void trx_disconnect_prepared(trx_t *trx) {
 void trx_free_for_mysql(trx_t *trx) {
 #ifdef WITH_WSREP
   /* for sanity, this may not have been cleared yet */
-  trx->wsrep_killed_by_query = 0;
+  trx->wsrep_killed_by_query.store(0);
 #endif /* WITH_WSREP */
   trx_disconnect_plain(trx);
   trx_free_for_background(trx);

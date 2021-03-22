@@ -1166,7 +1166,7 @@ struct trx_t {
                             the running thread can change. */
 
 #ifdef WITH_WSREP
-  query_id_t wsrep_killed_by_query;
+  std::atomic<query_id_t> wsrep_killed_by_query;
   bool wsrep_UK_scan;
 #endif /* WITH_WSREP */
 

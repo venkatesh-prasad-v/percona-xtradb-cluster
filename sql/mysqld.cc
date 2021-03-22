@@ -2938,7 +2938,7 @@ static void clean_up_mutexes() {
   mysql_mutex_destroy(&LOCK_global_index_stats);
   mysql_rwlock_destroy(&LOCK_consistent_snapshot);
   mysql_mutex_destroy(&LOCK_admin_tls_ctx_options);
-<<<<<<< HEAD
+  mysql_mutex_destroy(&LOCK_partial_revokes);
 #ifdef WITH_WSREP
   mysql_mutex_destroy(&LOCK_wsrep_ready);
   mysql_cond_destroy(&COND_wsrep_ready);
@@ -2958,10 +2958,6 @@ static void clean_up_mutexes() {
   mysql_mutex_destroy(&LOCK_wsrep_SR_store);
   mysql_mutex_destroy(&LOCK_wsrep_alter_tablespace);
 #endif /* WITH_WSREP */
-||||||| 6f7822ffd0f
-=======
-  mysql_mutex_destroy(&LOCK_partial_revokes);
->>>>>>> yura/dev/PS-7507-8.0-merge_8.0.23
 }
 
 /****************************************************************************
@@ -5787,7 +5783,8 @@ static int init_thread_environment() {
                    &LOCK_rotate_binlog_master_key, MY_MUTEX_INIT_FAST);
   mysql_mutex_init(key_LOCK_admin_tls_ctx_options, &LOCK_admin_tls_ctx_options,
                    MY_MUTEX_INIT_FAST);
-<<<<<<< HEAD
+  mysql_mutex_init(key_LOCK_partial_revokes, &LOCK_partial_revokes,
+                   MY_MUTEX_INIT_FAST);
 #ifdef WITH_WSREP
   mysql_mutex_init(key_LOCK_wsrep_ready, &LOCK_wsrep_ready, MY_MUTEX_INIT_FAST);
   mysql_cond_init(key_COND_wsrep_ready, &COND_wsrep_ready);
@@ -5816,11 +5813,6 @@ static int init_thread_environment() {
   mysql_mutex_init(key_LOCK_wsrep_alter_tablespace,
                    &LOCK_wsrep_alter_tablespace, MY_MUTEX_INIT_FAST);
 #endif /* WITH_WSREP */
-||||||| 6f7822ffd0f
-=======
-  mysql_mutex_init(key_LOCK_partial_revokes, &LOCK_partial_revokes,
-                   MY_MUTEX_INIT_FAST);
->>>>>>> yura/dev/PS-7507-8.0-merge_8.0.23
   return 0;
 }
 
@@ -11537,15 +11529,12 @@ bool mysqld_get_one_option(int optid,
       push_deprecated_warn_no_replacement(nullptr,
                                           "--slave-rows-search-algorithms");
       break;
-<<<<<<< HEAD
 #ifdef WITH_WSREP
     case OPT_WSREP_START_POSITION: {
       wsrep_start_position_init(argument);
       break;
     }
 #endif /* WITH_WSREP */
-||||||| 6f7822ffd0f
-=======
     case OPT_MASTER_INFO_REPOSITORY:
       push_deprecated_warn_no_replacement(nullptr, "--master-info-repository");
       break;
@@ -11553,7 +11542,6 @@ bool mysqld_get_one_option(int optid,
       push_deprecated_warn_no_replacement(nullptr,
                                           "--relay-log-info-repository");
       break;
->>>>>>> yura/dev/PS-7507-8.0-merge_8.0.23
   }
   return false;
 }
@@ -12553,8 +12541,8 @@ static PSI_mutex_info all_server_mutexes[]=
   { &key_LOCK_keyring_operations, "LOCK_keyring_operations", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},
   { &key_LOCK_tls_ctx_options, "LOCK_tls_ctx_options", 0, 0, "A lock to control all of the --ssl-* CTX related command line options for client server connection port"},
   { &key_LOCK_admin_tls_ctx_options, "LOCK_admin_tls_ctx_options", 0, 0, "A lock to control all of the --ssl-* CTX related command line options for administrative connection port"},
-<<<<<<< HEAD
-  { &key_LOCK_rotate_binlog_master_key, "LOCK_rotate_binlog_master_key", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME}
+  { &key_LOCK_rotate_binlog_master_key, "LOCK_rotate_binlog_master_key", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},
+  { &key_monitor_info_run_lock, "Source_IO_monitor::run_lock", 0, 0, PSI_DOCUMENT_ME}
 #ifdef WITH_WSREP
   ,
   { &key_LOCK_wsrep_ready, "LOCK_wsrep_ready", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},
@@ -12577,12 +12565,6 @@ static PSI_mutex_info all_server_mutexes[]=
   { &key_LOCK_wsrep_thd_queue, "LOCK_wsrep_thd_queue", 0, 0, PSI_DOCUMENT_ME},
   { &key_LOCK_wsrep_alter_tablespace, "LOCK_wsrep_alter_tablespace", 0, 0, PSI_DOCUMENT_ME}
 #endif /* WITH_WSREP */
-||||||| 6f7822ffd0f
-  { &key_LOCK_rotate_binlog_master_key, "LOCK_rotate_binlog_master_key", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME}
-=======
-  { &key_LOCK_rotate_binlog_master_key, "LOCK_rotate_binlog_master_key", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},
-  { &key_monitor_info_run_lock, "Source_IO_monitor::run_lock", 0, 0, PSI_DOCUMENT_ME}
->>>>>>> yura/dev/PS-7507-8.0-merge_8.0.23
 };
 /* clang-format on */
 
@@ -12710,8 +12692,8 @@ static PSI_cond_info all_server_conds[]=
   { &key_gtid_ensure_index_cond, "Gtid_state", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},
   { &key_COND_compress_gtid_table, "COND_compress_gtid_table", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},
   { &key_commit_order_manager_cond, "Commit_order_manager::m_workers.cond", 0, 0, PSI_DOCUMENT_ME},
-<<<<<<< HEAD
-  { &key_cond_slave_worker_hash, "Relay_log_info::slave_worker_hash_lock", 0, 0, PSI_DOCUMENT_ME}
+  { &key_cond_slave_worker_hash, "Relay_log_info::slave_worker_hash_lock", 0, 0, PSI_DOCUMENT_ME},
+  { &key_monitor_info_run_cond, "Source_IO_monitor::run_cond", 0, 0, PSI_DOCUMENT_ME}
 #ifdef WITH_WSREP
   ,
   { &key_COND_wsrep_ready, "COND_wsrep_ready", PSI_FLAG_SINGLETON, 0, PSI_DOCUMENT_ME},
@@ -12726,12 +12708,6 @@ static PSI_cond_info all_server_conds[]=
   { &key_COND_wsrep_thd_queue, "COND_wsrep_thd_queue", 0, 0, PSI_DOCUMENT_ME},
   { &key_COND_wsrep_group_commit, "COND_wsrep_group_commit", 0, 0, PSI_DOCUMENT_ME}
 #endif /* WITH_WSREP */
-||||||| 6f7822ffd0f
-  { &key_cond_slave_worker_hash, "Relay_log_info::slave_worker_hash_lock", 0, 0, PSI_DOCUMENT_ME}
-=======
-  { &key_cond_slave_worker_hash, "Relay_log_info::slave_worker_hash_lock", 0, 0, PSI_DOCUMENT_ME},
-  { &key_monitor_info_run_cond, "Source_IO_monitor::run_cond", 0, 0, PSI_DOCUMENT_ME}
->>>>>>> yura/dev/PS-7507-8.0-merge_8.0.23
 };
 /* clang-format on */
 
