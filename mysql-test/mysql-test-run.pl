@@ -314,17 +314,11 @@ our @DEFAULT_SUITES = qw(
   interactive_utilities
   jp
   stress
-<<<<<<< HEAD
   galera
   galera_3nodes
   galera_sr
   galera_3nodes_sr
   );
-||||||| 6f7822ffd0f
-  );
-=======
-);
->>>>>>> yura/dev/PS-7507-8.0-merge_8.0.23
 
 our $DEFAULT_SUITES = join ',', @DEFAULT_SUITES;
 
