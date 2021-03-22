@@ -1,10 +1,4 @@
-<<<<<<< HEAD
-# Copyright (c) 2017, 2019 Oracle and/or its affiliates. All rights reserved.
-||||||| 6f7822ffd0f
-# Copyright (c) 2017, 2020, Oracle and/or its affiliates. All rights reserved.
-=======
 # Copyright (c) 2017, 2020, Oracle and/or its affiliates.
->>>>>>> yura/dev/PS-7507-8.0-merge_8.0.23
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,

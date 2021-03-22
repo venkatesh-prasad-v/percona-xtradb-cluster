@@ -357,16 +357,12 @@
 #cmakedefine HAVE_UNIX_DNS_SRV @HAVE_UNIX_DNS_SRV@
 #cmakedefine HAVE_WIN32_DNS_SRV @HAVE_WIN32_DNS_SRV@
 
-<<<<<<< HEAD
 /*
  * Needed by wsrep (WITH_WSREP)
  */
 #define HAVE_GETIFADDRS 1
 
-||||||| 6f7822ffd0f
-=======
 /* ARM crc32 support */
 #cmakedefine HAVE_ARMV8_CRC32_INTRINSIC @HAVE_ARMV8_CRC32_INTRINSIC@
 
->>>>>>> yura/dev/PS-7507-8.0-merge_8.0.23
 #endif
