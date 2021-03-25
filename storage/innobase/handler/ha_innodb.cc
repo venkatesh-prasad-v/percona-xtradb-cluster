@@ -312,6 +312,13 @@ static const uint MAX_ENCRYPTION_THREADS = 255;
 extern uint srv_fil_crypt_rotate_key_age;
 extern uint srv_n_fil_crypt_iops;
 
+/** Path to the Percona-specific parallel doublewrite buffer (Deprecated) */
+static char *srv_parallel_doublewrite_path_deprecated = nullptr;
+
+/** Enable or disable encryption of pages in parallel doublewrite buffer
+file (Deprecated) */
+static bool srv_parallel_dblwr_encrypt_deprecated = false;
+
 /** Note we cannot use rec_format_enum because we do not allow
 COMPRESSED row format for innodb_default_row_format option. */
 enum default_row_format_enum {
@@ -4806,6 +4813,42 @@ static void innodb_undo_tablespaces_deprecate() {
   release_sysvar_source_service();
 }
 
+/** Validate innodb_parallel_doublewrite_path. Log a warning if it was set
+explicitly. */
+static void innodb_parallel_doublewrite_path_deprecate() {
+  acquire_sysvar_source_service();
+  if (sysvar_source_svc != nullptr) {
+    static const char *variable_name = "innodb_parallel_doublewrite_path";
+    enum enum_variable_source source;
+    if (!sysvar_source_svc->get(
+            variable_name, static_cast<unsigned int>(strlen(variable_name)),
+            &source)) {
+      if (source != COMPILED) {
+        ib::warn(ER_IB_MSG_DEPRECATED_INNODB_PARALLEL_DOUBLEWRITE_PATH);
+      }
+    }
+  }
+  release_sysvar_source_service();
+}
+
+/** Validate innodb_parallel_dblwr_encrypt. Log a warning if it was set
+explicitly. */
+static void innodb_parallel_dblwr_encrypt_deprecate() {
+  acquire_sysvar_source_service();
+  if (sysvar_source_svc != nullptr) {
+    static const char *variable_name = "innodb_parallel_dblwr_encrypt";
+    enum enum_variable_source source;
+    if (!sysvar_source_svc->get(
+            variable_name, static_cast<unsigned int>(strlen(variable_name)),
+            &source)) {
+      if (source != COMPILED) {
+        ib::warn(ER_IB_MSG_DEPRECATED_INNODB_PARALLEL_DBLWR_ENCRYPT);
+      }
+    }
+  }
+  release_sysvar_source_service();
+}
+
 /** Initialize and normalize innodb_buffer_pool_size. */
 static void innodb_buffer_pool_size_init() {
 #ifdef UNIV_DEBUG
@@ -5367,6 +5410,8 @@ static int innodb_init_params() {
   innodb_buffer_pool_size_init();
 
   innodb_undo_tablespaces_deprecate();
+  innodb_parallel_doublewrite_path_deprecate();
+  innodb_parallel_dblwr_encrypt_deprecate();
 
   int ret = innodb_log_file_size_init();
   if (ret != 0) {
@@ -23183,6 +23228,32 @@ static void innodb_undo_tablespaces_update(
   innodb_undo_tablespaces_deprecate();
 }
 
+/** Validate the value of innodb_parallel_doublewrite_path global variable.
+This function is registered as a callback with MySQL.
+@param[in]	thd       thread handle
+@param[in]	var       pointer to system variable
+@param[in]	var_ptr   where the formal string goes
+@param[in]	save      immediate result from check function */
+static void innodb_parallel_doublewrite_path_update(
+    THD *thd MY_ATTRIBUTE((unused)), SYS_VAR *var MY_ATTRIBUTE((unused)),
+    void *var_ptr MY_ATTRIBUTE((unused)),
+    const void *save MY_ATTRIBUTE((unused))) {
+  innodb_parallel_doublewrite_path_deprecate();
+}
+
+/** Validate the value of innodb_parallel_dblwr_encrypt global variable.
+This function is registered as a callback with MySQL.
+@param[in]	thd       thread handle
+@param[in]	var       pointer to system variable
+@param[in]	var_ptr   where the formal string goes
+@param[in]	save      immediate result from check function */
+static void innodb_parallel_dblwr_encrypt_update(
+    THD *thd MY_ATTRIBUTE((unused)), SYS_VAR *var MY_ATTRIBUTE((unused)),
+    void *var_ptr MY_ATTRIBUTE((unused)),
+    const void *save MY_ATTRIBUTE((unused))) {
+  innodb_parallel_dblwr_encrypt_deprecate();
+}
+
 /* Declare default check function for boolean system variable. Cannot include
 sql_plugin_var.h header in this file due to conflicting macro definitions. */
 int check_func_bool(THD *, SYS_VAR *, void *save, st_mysql_value *value);
@@ -26032,6 +26103,22 @@ static MYSQL_SYSVAR_ENUM(
     "except for the deletion.",
     nullptr, nullptr, 0, &corrupt_table_action_typelib);
 
+static MYSQL_SYSVAR_STR(
+    parallel_doublewrite_path, srv_parallel_doublewrite_path_deprecated,
+    PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_READONLY,
+    "Deprecated Percona-specific variable that was used to set path to the "
+    "parallel doublewrite file and has no effect now. "
+    "Use --innodb-doublewrite-dir instead.",
+    nullptr, innodb_parallel_doublewrite_path_update, "xb_doublewrite");
+
+static MYSQL_SYSVAR_BOOL(
+    parallel_dblwr_encrypt, srv_parallel_dblwr_encrypt_deprecated,
+    PLUGIN_VAR_OPCMDARG,
+    "Deprecated Percona-specific variable that was used to enable or "
+    "disable encryption of parallel doublewrite buffer file and has no "
+    "effect now.",
+    nullptr, innodb_parallel_dblwr_encrypt_update, false);
+
 static MYSQL_SYSVAR_UINT(
     compressed_columns_zip_level, srv_compressed_columns_zip_level,
     PLUGIN_VAR_RQCMDARG,
@@ -26337,6 +26424,8 @@ static SYS_VAR *innobase_system_variables[] = {
 #endif /* UNIV_DEBUG */
     MYSQL_SYSVAR(parallel_read_threads),
     MYSQL_SYSVAR(corrupt_table_action),
+    MYSQL_SYSVAR(parallel_doublewrite_path),
+    MYSQL_SYSVAR(parallel_dblwr_encrypt),
     MYSQL_SYSVAR(compressed_columns_zip_level),
     MYSQL_SYSVAR(compressed_columns_threshold),
     MYSQL_SYSVAR(ft_ignore_stopwords),
