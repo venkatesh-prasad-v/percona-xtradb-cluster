@@ -6504,39 +6504,6 @@ static int init_server_components() {
   if (wsrep_init_server()) unireg_abort(MYSQLD_ABORT_EXIT);
 
   if (!wsrep_recovery) {
-    if (pxc_encrypt_cluster_traffic && !opt_initialize &&
-        !is_help_or_validate_option()) {
-      bool bootstrap = (wsrep_new_cluster ||
-                        (strcmp(wsrep_cluster_address, "gcomm://") == 0));
-      if (TLS_channel::singleton_init(&mysql_main, mysql_main_channel,
-                                      opt_use_ssl, &server_main_callback,
-                                      opt_initialize)) {
-        unireg_abort(MYSQLD_ABORT_EXIT);
-      }
-      if (server_main_callback.wsrep_ssl_artifacts_check(bootstrap)) {
-        unireg_abort(MYSQLD_ABORT_EXIT);
-      }
-    }
-#if 0
-      ssl_artifacts_status auto_detection_status = auto_detect_ssl();
-      if (auto_detection_status == SSL_ARTIFACTS_AUTO_DETECTED)
-        sql_print_information(
-            "Found %s, %s and %s in data directory. "
-            "Trying to enable SSL support using them.",
-            DEFAULT_SSL_CA_CERT, DEFAULT_SSL_SERVER_CERT,
-            DEFAULT_SSL_SERVER_KEY);
-
-      /* Generate certs automatically only when bootstrapping
-      to avoid cases where starting up creates incompatible certs */
-      if (wsrep_new_cluster) {
-        if (do_auto_cert_generation(auto_detection_status) == false)
-          unireg_abort(MYSQLD_ABORT_EXIT);
-      } else {
-        WSREP_INFO(
-            "Skipping automatic SSL certificate generation"
-            " (enabled only in bootstrap mode)");
-      }
-#endif /* 0 */
 
     /* Disable wsrep functionality with bootstrap */
     if (opt_initialize) {
@@ -8257,6 +8224,44 @@ int mysqld_main(int argc, char **argv)
 
     (void)RUN_HOOK(server_state, after_engine_recovery, (nullptr));
   }
+
+#ifdef WITH_WSREP
+  if (!wsrep_recovery) {
+    if (pxc_encrypt_cluster_traffic && !opt_initialize &&
+        !is_help_or_validate_option()) {
+      bool bootstrap = (wsrep_new_cluster ||
+                        (strcmp(wsrep_cluster_address, "gcomm://") == 0));
+      if (TLS_channel::singleton_init(&mysql_main, mysql_main_channel,
+                                      opt_use_ssl, &server_main_callback,
+                                      opt_initialize)) {
+        unireg_abort(MYSQLD_ABORT_EXIT);
+      }
+      if (server_main_callback.wsrep_ssl_artifacts_check(bootstrap)) {
+        unireg_abort(MYSQLD_ABORT_EXIT);
+      }
+    }
+#if 0
+      ssl_artifacts_status auto_detection_status = auto_detect_ssl();
+      if (auto_detection_status == SSL_ARTIFACTS_AUTO_DETECTED)
+        sql_print_information(
+            "Found %s, %s and %s in data directory. "
+            "Trying to enable SSL support using them.",
+            DEFAULT_SSL_CA_CERT, DEFAULT_SSL_SERVER_CERT,
+            DEFAULT_SSL_SERVER_KEY);
+
+      /* Generate certs automatically only when bootstrapping
+      to avoid cases where starting up creates incompatible certs */
+      if (wsrep_new_cluster) {
+        if (do_auto_cert_generation(auto_detection_status) == false)
+          unireg_abort(MYSQLD_ABORT_EXIT);
+      } else {
+        WSREP_INFO(
+            "Skipping automatic SSL certificate generation"
+            " (enabled only in bootstrap mode)");
+      }
+#endif /* 0 */
+  }
+#endif /*WITH_WSREP */
 
   if (init_ssl_communication()) unireg_abort(MYSQLD_ABORT_EXIT);
   if (network_init()) unireg_abort(MYSQLD_ABORT_EXIT);
