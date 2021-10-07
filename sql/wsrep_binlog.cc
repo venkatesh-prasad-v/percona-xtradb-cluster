@@ -136,7 +136,7 @@ static int wsrep_write_cache_inc(THD *const thd,
   unsigned char *read_pos = NULL;
   my_off_t read_len = 0;
 
-  if (cache->begin(&read_pos, &read_len, thd->wsrep_sr().bytes_certified())) {
+  if (cache->begin(&read_pos, &read_len, thd->wsrep_sr().log_position())) {
     WSREP_ERROR("Failed to initialize io-cache");
     DBUG_RETURN(ER_ERROR_ON_WRITE);
   }
@@ -221,6 +221,9 @@ cleanup:
 int wsrep_write_cache(THD *const thd,
                       IO_CACHE_binlog_cache_storage *const cache,
                       size_t *const len) {
+  if (int res = prepend_binlog_control_event(thd)) {
+    return res;
+  }
   return wsrep_write_cache_inc(thd, cache, len);
 }
 
@@ -396,7 +399,7 @@ void wsrep_register_for_group_commit(THD *thd) {
     return;
   }
 
-  DBUG_ASSERT(thd->wsrep_trx().state() == wsrep::transaction::s_committing);
+  assert(thd->wsrep_trx().state() == wsrep::transaction::s_committing);
   MUTEX_LOCK(guard, &LOCK_wsrep_group_commit);
   wsrep_group_commit_queue.push(thd);
   thd->wsrep_enforce_group_commit = true;

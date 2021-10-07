@@ -133,6 +133,9 @@ int wsrep_apply_events(THD *thd, Relay_log_info *rli __attribute__((unused)),
     WSREP_DEBUG("Empty apply event found while processing write-set: %lld",
                 (long long)wsrep_thd_trx_seqno(thd));
 
+  if (thd->wsrep_bin_log_flag_save == 0) {
+    thd->wsrep_bin_log_flag_save = thd->variables.option_bits & OPTION_BIN_LOG;
+  }
   while (buf_len) {
     int exec_res;
     Log_event *ev =
@@ -186,7 +189,7 @@ int wsrep_apply_events(THD *thd, Relay_log_info *rli __attribute__((unused)),
                      thd->wsrep_trx().ws_meta().gtid());
     }
 
-    thd->lex->set_current_select(NULL);
+    thd->lex->set_current_query_block(NULL);
     if (!ev->common_header->when.tv_sec)
       my_micro_time_to_timeval(my_micro_time(), &ev->common_header->when);
     ev->thd = thd;  // because up to this point, ev->thd == 0
