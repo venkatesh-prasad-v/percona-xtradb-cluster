@@ -119,8 +119,8 @@ Wsrep_high_priority_service::Wsrep_high_priority_service(THD *thd)
 
   /* Disable general logging on applier threads */
   thd->variables.option_bits |= OPTION_LOG_OFF;
-  /* Enable binlogging if opt_log_slave_updates is set */
-  if (opt_log_slave_updates) {
+  /* Enable binlogging if opt_log_replica_updates is set */
+  if (opt_log_replica_updates) {
     thd->variables.option_bits |= OPTION_BIN_LOG;
     thd->variables.option_bits &= ~(OPTION_BIN_LOG_INTERNAL_OFF);
   } else {
@@ -253,7 +253,7 @@ int Wsrep_high_priority_service::append_fragment_and_commit(
     Wsrep_storage_service::commit(). Consider implementing
     common utility function to deal with commit.
    */
-  const bool do_binlog_commit = (opt_log_slave_updates && wsrep_gtid_mode &&
+  const bool do_binlog_commit = (opt_log_replica_updates && wsrep_gtid_mode &&
                                  m_thd->variables.gtid_seq_no);
   // TODO: G-4
   assert(0);
@@ -567,7 +567,7 @@ int Wsrep_high_priority_service::log_dummy_write_set(
     cs.after_rollback();
 
 #if 0
-    if (!(ret && opt_log_slave_updates && wsrep_gtid_mode &&
+    if (!(ret && opt_log_replica_updates && wsrep_gtid_mode &&
           m_thd->variables.gtid_seq_no)) {
       cs.before_rollback();
       cs.after_rollback();
