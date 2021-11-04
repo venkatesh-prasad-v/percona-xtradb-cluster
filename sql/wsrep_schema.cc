@@ -17,6 +17,7 @@
 #include "key.h"
 #include "my_sys.h"
 #include "mysql/components/services/log_builtins.h"
+#include "sql/raii/sentry.h"  // raii::Sentry
 #include "sql/sql_lex.h"
 #include "sql_base.h"
 #include "sql_parse.h"
@@ -29,7 +30,6 @@
 #include "wsrep_binlog.h"
 #include "wsrep_high_priority_service.h"
 #include "wsrep_schema.h"
-#include "wsrep_storage_service.h"
 #include "wsrep_thd.h"
 #include "wsrep_xid.h"
 
@@ -101,56 +101,6 @@ static const std::string delete_from_members_table =
     "DELETE FROM " + wsrep_schema_str + "." + members_table_str;
 
 namespace Wsrep_schema_impl {
-
-class binlog_off {
- public:
-  binlog_off(THD *thd)
-      : m_thd(thd),
-        m_option_bits(thd->variables.option_bits),
-        m_sql_log_bin(thd->variables.sql_log_bin) {
-    thd->variables.option_bits &= ~OPTION_BIN_LOG;
-    thd->variables.option_bits |= OPTION_BIN_LOG_INTERNAL_OFF;
-    thd->variables.sql_log_bin = 0;
-  }
-  ~binlog_off() {
-    m_thd->variables.option_bits = m_option_bits;
-    m_thd->variables.sql_log_bin = m_sql_log_bin;
-  }
-
- private:
-  THD *m_thd;
-  ulonglong m_option_bits;
-  bool m_sql_log_bin;
-};
-
-class wsrep_off {
- public:
-  wsrep_off(THD *thd) : m_thd(thd), m_wsrep_on(thd->variables.wsrep_on) {
-    thd->variables.wsrep_on = 0;
-  }
-  ~wsrep_off() { m_thd->variables.wsrep_on = m_wsrep_on; }
-
- private:
-  THD *m_thd;
-  bool m_wsrep_on;
-};
-
-class thd_context_switch {
- public:
-  thd_context_switch(THD *orig_thd, THD *cur_thd)
-      : m_orig_thd(orig_thd), m_cur_thd(cur_thd) {
-    wsrep_reset_threadvars(m_orig_thd);
-    wsrep_store_threadvars(m_cur_thd);
-  }
-  ~thd_context_switch() {
-    wsrep_reset_threadvars(m_cur_thd);
-    wsrep_store_threadvars(m_orig_thd);
-  }
-
- private:
-  THD *m_orig_thd;
-  THD *m_cur_thd;
-};
 
 static int execute_SQL(THD *thd, const char *sql, uint length) {
   DBUG_ENTER("Wsrep_schema::execute_SQL()");
@@ -586,8 +536,8 @@ int Wsrep_schema::store_view(THD *thd, const Wsrep_view &view) {
   TABLE *members_history_table = 0;
 #endif /* WSREP_SCHEMA_MEMBERS_HISTORY */
 
-  Wsrep_schema_impl::wsrep_off wsrep_off(thd);
-  Wsrep_schema_impl::binlog_off binlog_off(thd);
+  Thd_wsrep_off wsrep_off(thd);
+  Thd_binlog_off binlog_off(thd);
 
   /*
     Clean up cluster table and members table.
@@ -815,7 +765,7 @@ int Wsrep_schema::append_fragment(THD *thd, const wsrep::id &server_id,
   os << server_id;
   WSREP_DEBUG("Append fragment(%u) %s, %llu", thd->thread_id(),
               os.str().c_str(), transaction_id.get());
-  Wsrep_schema_impl::binlog_off binlog_off(thd);
+  Thd_binlog_off binlog_off(thd);
   Wsrep_schema_impl::init_stmt(thd);
 
   TABLE *frag_table = 0;
@@ -851,7 +801,7 @@ int Wsrep_schema::update_fragment_meta(THD *thd,
               ws_meta.seqno().get());
   assert(ws_meta.seqno().is_undefined() == false);
 
-  Wsrep_schema_impl::binlog_off binlog_off(thd);
+  Thd_binlog_off binlog_off(thd);
   int error;
   uchar key[MAX_KEY_LENGTH];
   key_part_map key_map = 0;
@@ -947,8 +897,8 @@ int Wsrep_schema::remove_fragments(THD *thd, const wsrep::id &server_id,
   int ret = 0;
 
   WSREP_DEBUG("Removing %zu fragments", fragments.size());
-  Wsrep_schema_impl::wsrep_off wsrep_off(thd);
-  Wsrep_schema_impl::binlog_off binlog_off(thd);
+  Thd_wsrep_off wsrep_off(thd);
+  Thd_binlog_off binlog_off(thd);
 
   /*
     Open SR table for write.
@@ -1013,9 +963,22 @@ int Wsrep_schema::replay_transaction(
   thd.thread_stack = (orig_thd ? orig_thd->thread_stack : (char *)&thd);
   wsrep_assign_from_threadvars(&thd);
 
-  Wsrep_schema_impl::wsrep_off wsrep_off(&thd);
-  Wsrep_schema_impl::binlog_off binlog_off(&thd);
-  Wsrep_schema_impl::thd_context_switch thd_context_switch(orig_thd, &thd);
+  Thd_wsrep_off wsrep_off(&thd);
+  Thd_binlog_off binlog_off(&thd);
+  Thd_context_switch thd_context_switch(orig_thd, &thd);
+
+  /*
+    It is expected that both creation and destruction of trx object in InnoDB
+    should be done by the same thread except for the case of BF abort by a HP
+    trx (See call to TrxInInnoDB::enter() from innobase_close_connection()).
+    So, any trx object opened by the THD object must be destroyed before the
+    current_thd is updated.
+
+    As current_thd is updated in the destructor of `Thd_context_switch`, we
+    delegate this cleanup task to a Sentry object.
+  */
+  raii::Sentry<> thd_release_resources_guard{
+      [&thd]() { thd.release_resources(); }};
 
   int ret = 1;
   int error;
@@ -1056,7 +1019,7 @@ int Wsrep_schema::replay_transaction(
     frag_table->field[4]->val_str(&buf);
 
     {
-      Wsrep_schema_impl::thd_context_switch thd_context_switch2(&thd, orig_thd);
+      Thd_context_switch thd_context_switch2(&thd, orig_thd);
 
       ret = wsrep_apply_events(orig_thd, rli, buf.c_ptr_quick(), buf.length());
       if (ret) {
@@ -1113,12 +1076,23 @@ int Wsrep_schema::recover_sr_transactions(THD *orig_thd) {
 
   TABLE *frag_table = 0;
   TABLE *cluster_table = 0;
-  Wsrep_storage_service storage_service(&storage_thd);
-  Wsrep_schema_impl::binlog_off binlog_off(&storage_thd);
-  Wsrep_schema_impl::wsrep_off wsrep_off(&storage_thd);
-  Wsrep_schema_impl::thd_context_switch thd_context_switch(orig_thd,
-                                                           &storage_thd);
+  Thd_binlog_off binlog_off(&storage_thd);
+  Thd_wsrep_off wsrep_off(&storage_thd);
+  Thd_context_switch thd_context_switch(orig_thd, &storage_thd);
   Wsrep_server_state &server_state(Wsrep_server_state::instance());
+
+  /*
+    It is expected that both creation and destruction of trx object in InnoDB
+    should be done by the same thread except for the case of BF abort by a HP
+    trx (See call to TrxInInnoDB::enter() from innobase_close_connection()).
+    So, any trx object opened by the THD object must be destroyed before the
+    current_thd is updated.
+
+    As current_thd is updated in the destructor of `Thd_context_switch`, we
+    delegate this cleanup task to a Sentry object.
+  */
+  raii::Sentry<> thd_release_resources_guard{
+      [&storage_thd]() { storage_thd.release_resources(); }};
 
   int ret = 1;
   int error;
@@ -1211,12 +1185,13 @@ int Wsrep_schema::recover_sr_transactions(THD *orig_thd) {
       }
       applier->store_globals();
       wsrep::mutable_buffer unused;
-      if((ret= applier->apply_write_set(ws_meta, data, unused)) != 0) {
+      if ((ret = applier->apply_write_set(ws_meta, data, unused)) != 0) {
         WSREP_ERROR("SR trx recovery applying returned %d", ret);
       } else {
         applier->after_apply();
       }
-      storage_service.store_globals();
+      applier->reset_globals();
+      wsrep_store_threadvars(&storage_thd);
     } else if (error == HA_ERR_END_OF_FILE) {
       ret = 0;
     } else {

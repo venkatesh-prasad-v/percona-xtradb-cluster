@@ -26,6 +26,7 @@
 #include "wsrep_xid.h"
 
 #include "log.h"         /* stmt_has_updated_trans_table() */
+#include "raii/sentry.h" /* raii::Sentry */
 #include "rpl_filter.h"  /* binlog_filter */
 #include "rpl_rli.h"     /* Relay_log_info */
 #include "sql_base.h"    /* close_temporary_table() */
@@ -144,7 +145,7 @@ void Wsrep_client_service::cleanup_transaction() {
 }
 
 int Wsrep_client_service::prepare_fragment_for_replication(
-    wsrep::mutable_buffer &buffer, size_t& log_position) {
+    wsrep::mutable_buffer &buffer, size_t &log_position) {
   assert(m_thd == current_thd);
   THD *thd = m_thd;
   DBUG_ENTER("Wsrep_client_service::prepare_fragment_for_replication");
@@ -264,8 +265,7 @@ void Wsrep_client_service::will_replay() {
   mysql_mutex_unlock(&LOCK_wsrep_replaying);
 }
 
-void Wsrep_client_service::signal_replayed()
-{
+void Wsrep_client_service::signal_replayed() {
   assert(m_thd == current_thd);
   mysql_mutex_lock(&LOCK_wsrep_replaying);
   --wsrep_replaying;
@@ -304,8 +304,7 @@ enum wsrep::provider::status Wsrep_client_service::replay() {
   DBUG_RETURN(ret);
 }
 
-enum wsrep::provider::status Wsrep_client_service::replay_unordered()
-{
+enum wsrep::provider::status Wsrep_client_service::replay_unordered() {
   assert(0);
   return wsrep::provider::error_not_implemented;
 }
@@ -328,8 +327,7 @@ void Wsrep_client_service::wait_for_replayers(
   lock.lock();
 }
 
-enum wsrep::provider::status Wsrep_client_service::commit_by_xid()
-{
+enum wsrep::provider::status Wsrep_client_service::commit_by_xid() {
   assert(0);
   return wsrep::provider::error_not_implemented;
 }

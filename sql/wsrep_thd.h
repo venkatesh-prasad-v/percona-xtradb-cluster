@@ -344,4 +344,54 @@ static inline void wsrep_log_thd(THD *thd, const char *message,
 #define WSREP_LOG_THD(thd_, message_) \
   wsrep_log_thd(thd_, message_, __FUNCTION__)
 
+class Thd_binlog_off {
+ public:
+  Thd_binlog_off(THD *thd)
+      : m_thd(thd),
+        m_option_bits(thd->variables.option_bits),
+        m_sql_log_bin(thd->variables.sql_log_bin) {
+    thd->variables.option_bits &= ~OPTION_BIN_LOG;
+    thd->variables.option_bits |= OPTION_BIN_LOG_INTERNAL_OFF;
+    thd->variables.sql_log_bin = 0;
+  }
+  ~Thd_binlog_off() {
+    m_thd->variables.option_bits = m_option_bits;
+    m_thd->variables.sql_log_bin = m_sql_log_bin;
+  }
+
+ private:
+  THD *m_thd;
+  ulonglong m_option_bits;
+  bool m_sql_log_bin;
+};
+
+class Thd_wsrep_off {
+ public:
+  Thd_wsrep_off(THD *thd) : m_thd(thd), m_wsrep_on(thd->variables.wsrep_on) {
+    thd->variables.wsrep_on = 0;
+  }
+  ~Thd_wsrep_off() { m_thd->variables.wsrep_on = m_wsrep_on; }
+
+ private:
+  THD *m_thd;
+  bool m_wsrep_on;
+};
+
+class Thd_context_switch {
+ public:
+  Thd_context_switch(THD *orig_thd, THD *cur_thd)
+      : m_orig_thd(orig_thd), m_cur_thd(cur_thd) {
+    wsrep_reset_threadvars(m_orig_thd);
+    wsrep_store_threadvars(m_cur_thd);
+  }
+  ~Thd_context_switch() {
+    wsrep_reset_threadvars(m_cur_thd);
+    wsrep_store_threadvars(m_orig_thd);
+  }
+
+ private:
+  THD *m_orig_thd;
+  THD *m_cur_thd;
+};
+
 #endif /* WSREP_THD_H */
