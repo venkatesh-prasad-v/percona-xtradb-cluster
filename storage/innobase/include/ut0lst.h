@@ -393,7 +393,7 @@ void ut_list_insert2(List &list, typename List::elem_type *elem1,
   ut_ad(elem1 != elem2);
   ut_ad(elem1 != nullptr);
   ut_ad(elem2 != nullptr);
-  UT_LIST_IS_INITIALISED(list);
+  ut_ad(UT_LIST_IS_INITIALISED(list));
 
   auto &elem1_node = List::get_node(*elem1);
   auto &elem2_node = List::get_node(*elem2);
