@@ -721,7 +721,7 @@ int Wsrep_applier_service::apply_nbo_begin(const wsrep::ws_meta &ws_meta,
     /* Disable general logging on applier threads */
     replayer_thd->variables.option_bits |= OPTION_LOG_OFF;
     /* Enable binlogging if opt_log_slave_updates is set */
-    if (opt_log_slave_updates) {
+    if (opt_log_replica_updates) {
       replayer_thd->variables.option_bits |= OPTION_BIN_LOG;
       replayer_thd->variables.option_bits &= ~(OPTION_BIN_LOG_INTERNAL_OFF);
     } else {
