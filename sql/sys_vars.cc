@@ -1367,7 +1367,7 @@ static bool binlog_format_check(sys_var *self, THD *thd, set_var *var) {
     WSREP_ERROR(
         "Percona-XtraDB-Cluster prohibits setting"
         " binlog_format to STATEMENT or MIXED");
-    my_error(ER_WRONG_VALUE_FOR_VAR, MYF(0), var->var->name.str,
+    my_error(ER_WRONG_VALUE_FOR_VAR, MYF(0), self->name.str,
              var->save_result.ulonglong_value == BINLOG_FORMAT_STMT
                  ? "STATEMENT"
                  : "MIXED");
