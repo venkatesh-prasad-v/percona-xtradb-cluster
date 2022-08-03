@@ -92,7 +92,7 @@ bool PFS_system_variable_cache::init_show_var_array(enum_var_type scope,
   m_query_scope = scope;
 
 #ifndef NDEBUG
-  extern mysql_mutex_t LOCK_plugin;
+  extern mysql_mutex_t LOCK_plugin [[maybe_unused]];
   mysql_mutex_assert_not_owner(&LOCK_plugin);
 #endif
   mysql_rwlock_rdlock(&LOCK_system_variables_hash);
