@@ -1,10 +1,4 @@
-<<<<<<< HEAD
-# Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.
-||||||| 31e88966cd3
-# Copyright (c) 2017, 2021, Oracle and/or its affiliates.
-=======
 # Copyright (c) 2017, 2022, Oracle and/or its affiliates.
->>>>>>> ps/release-8.0.29-21
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
