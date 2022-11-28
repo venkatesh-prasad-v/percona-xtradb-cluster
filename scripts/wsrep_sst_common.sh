@@ -277,6 +277,11 @@ wsrep_log_debug()
     fi
 }
 
+venki_debug()
+{
+    wsrep_log "VENKI_DBG:(debug) $*"
+}
+
 wsrep_cleanup_progress_file()
 {
     [ -n "${SST_PROGRESS_FILE:-}" ] && rm -f "$SST_PROGRESS_FILE" 2>/dev/null || true
@@ -683,6 +688,15 @@ function run_post_processing_steps()
         wsrep_log_error "******************* FATAL ERROR ********************** "
         return 2
     fi
+
+    if [ $keyring_component_joiner_autoconfig -eq 1 ]; then
+        if [ $keyring_component_type == "component_keyring_file" ]; then
+            # Handle joiner side component_keyring_file here
+            venki_debug "Running post-processing: datadir: $datadir"
+            setup_component_config "$keyring_component_type" "$datadir"
+        fi
+    fi
+
     wsrep_log_debug "Found the ${MYSQLD_NAME} binary in ${mysqld_path}"
     wsrep_log_debug "--$("$mysqld_path" --version | cut -d' ' -f2-)"
 
@@ -936,6 +950,34 @@ EOF
     return 0
 }
 
+function exec_sql() {
+  local user=$1
+  local password=$2
+  local socket=$3
+  local query=$4
+  local args=""
+  local retvalue
+  local retoutput
+  local default_auth=""
+
+  if [[ $# -ge 5 ]]; then
+    args=$5
+  fi
+
+  defaults=$(printf '[client]\nuser=%s\npassword="%s"\nsocket=%s\n%s' \
+    "${user}" \
+    "${password}" \
+    "${socket}" \
+    "${default_auth}"
+  )
+
+  venki_debug "Running: mysql --defaults-file=<(echo "${defaults}") --unbuffered --batch --silent ${args} -e "$query""
+  retoutput=$(mysql --defaults-file=<(echo "${defaults}") --unbuffered --batch --silent ${args} -e "$query")
+  retvalue=$?
+
+  printf "%s" "${retoutput}"
+  return $retvalue
+}
 
 # Reads incoming data from STDIN and sets the variables
 #

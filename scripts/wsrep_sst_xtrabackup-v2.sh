@@ -27,6 +27,9 @@
 #
 . $(dirname $0)/wsrep_sst_common
 
+# Uncomment to add more verbose logging
+# set -x
+
 #-------------------------------------------------------------------------------
 #
 # Step-2: Setup default global variable that we plan to use during processing.
@@ -66,11 +69,16 @@ pvopts="-f  -i 10 -N $WSREP_SST_OPT_ROLE "
 
 uextra=0
 
-# keyring specific variables.
+# Keyring specific variables.
 
 # Till PXC-5.7.22, only supporting keyring plugin was keyring_file plugin.
-
 keyring_plugin=0
+
+# Keyring component variables
+keyring_component_donor_active=0
+keyring_component_type=0
+keyring_component_data_file=""
+keyring_component_joiner_autoconfig=0
 
 keyring_file_data=""
 keyring_vault_config=""
@@ -658,6 +666,7 @@ read_cnf()
     ttime=$(parse_cnf sst time 0)
     scomp=$(parse_cnf sst compressor "")
     sdecomp=$(parse_cnf sst decompressor "")
+    keyring_component_joiner_autoconfig=$(parse_cnf sst component-auto-config 0)
 
     # if wsrep_node_address is not set raise a warning
     local wsrep_node_address=$(parse_cnf mysqld wsrep-node-address "")
@@ -681,8 +690,6 @@ read_cnf()
             progress=""
         fi
     fi
-
-    #------- KEYRING config parsing
 
     #======================================================================
     # Parse for keyring plugin. Only 1 plugin can be enabled at given time.
@@ -780,7 +787,7 @@ read_cnf()
 
     # Buildup the list of files to keep in the datadir
     # (These files will not be REMOVED on the joiner node)
-    cpat=$(parse_cnf sst cpat '.*\.pem$\|.*init\.ok$\|.*galera\.cache$\|.*sst_in_progress$\|.*sst-xb-tmpdir$\|.*gvwstate\.dat$\|.*grastate\.dat$\|.*\.err$\|.*\.log$\|.*RPM_UPGRADE_MARKER$\|.*RPM_UPGRADE_HISTORY$')
+    cpat=$(parse_cnf sst cpat '.*\.pem$\|.*init\.ok$\|.*galera\.cache$\|.*sst_in_progress$\|.*sst-xb-tmpdir$\|.*gvwstate\.dat$\|.*grastate\.dat$\|.*\.err$\|.*\.log$\|.*RPM_UPGRADE_MARKER$\|.*RPM_UPGRADE_HISTORY$\|*.my')
 
     # Keep the donor's keyring file
     cpat+="\|.*/${XB_DONOR_KEYRING_FILE}$"
@@ -934,12 +941,12 @@ cleanup_joiner()
         wsrep_log_debug "Cleaning up fifo file $progress"
         rm $progress
     fi
-    if [[ -n "${JOINER_SST_DIR:-}" && -z "$WSREP_LOG_DEBUG" ]]; then
-      [[ -d "${JOINER_SST_DIR}" ]] && rm -rf "${JOINER_SST_DIR}" || true
-    fi
-    if [[ -n "${tmpdirbase}" ]]; then
-        [[ -d "${tmpdirbase}" ]] && rm -rf "${tmpdirbase}" || true
-    fi
+#    if [[ -n "${JOINER_SST_DIR:-}" && -z "$WSREP_LOG_DEBUG" ]]; then
+#      [[ -d "${JOINER_SST_DIR}" ]] && rm -rf "${JOINER_SST_DIR}" || true
+#    fi
+#    if [[ -n "${tmpdirbase}" ]]; then
+#        [[ -d "${tmpdirbase}" ]] && rm -rf "${tmpdirbase}" || true
+#    fi
 
     if [[ -r "${XB_DONOR_KEYRING_FILE_PATH}" ]]; then
         rm -f "${XB_DONOR_KEYRING_FILE_PATH}"
@@ -1006,6 +1013,18 @@ cleanup_donor()
     rm -rf "${KEYRING_FILE_DIR}/${XB_DONOR_KEYRING_FILE}" || true
 
     exit $estatus
+}
+
+setup_component_config()
+{
+    local component_type=$1
+    local destination=$2
+    venki_debug "in setup_component_config: comp_type: $component_type DATA: $DATA JOINER_SST_DIR: $JOINER_SST_DIR"
+    printf "{
+  \"path\": \"$DATA/$component_type\",
+  \"read_only\": true
+}" > $destination/$component_type.cnf
+
 }
 
 setup_ports()
@@ -1604,6 +1623,7 @@ function initialize_pxb_commands()
                 --target-dir=\$itmpdir 2> >(logger -p daemon.err -t ${ssystag}innobackupex-backup)"
         fi
     else
+        venki_debug "Set INNOMOVE command"
         # prepare doesn't look at my.cnf instead it has its own generated backup-my.cnf
         INNOPREPARE="${pxb_bin_path} $disver $iapts --prepare \
             \$rebuildcmd \$keyringapplyopt \$encrypt_prepare_options \
@@ -1855,6 +1875,67 @@ then
     # main temp directory for SST (non-XB) related files
     donor_tmpdir=$(mktemp --tmpdir="${tmpdirbase}" --directory donor_tmp_XXXX)
 
+    #------- KEYRING config parsing
+    #======================================================================
+    # Query the donor server for keyring component.
+    venki_debug "Now: SST user: ${WSREP_SST_OPT_USER} SST Pass: ${WSREP_SST_OPT_PSWD}" 
+    keyring_is_active=$(exec_sql ${WSREP_SST_OPT_USER} ${WSREP_SST_OPT_PSWD} ${WSREP_SST_OPT_SOCKET} \
+    "SELECT STATUS_VALUE FROM performance_schema.keyring_component_status WHERE STATUS_KEY='Component_status';")
+    venki_debug "keyring_comp_status: ${keyring_is_active}"
+
+    if [[ "${keyring_is_active}" == "Active" ]]; then
+        venki_debug "Keyring is active"
+        keyring_component_donor_active=1
+
+        # Now get the keyring type
+        keyring_component_type=$(exec_sql ${WSREP_SST_OPT_USER} ${WSREP_SST_OPT_PSWD} ${WSREP_SST_OPT_SOCKET} \
+        "SELECT STATUS_VALUE FROM performance_schema.keyring_component_status WHERE STATUS_KEY='Implementation_name';")
+        venki_debug "Keyring type is ${keyring_component_type}"
+
+        if [ $keyring_component_type == "component_keyring_file" ]; then
+            # Handle donor side component_keyring_file here
+
+            # Get the manifest file details
+            keyring_component_data_file=$(exec_sql ${WSREP_SST_OPT_USER} ${WSREP_SST_OPT_PSWD} ${WSREP_SST_OPT_SOCKET} \
+                "SELECT STATUS_VALUE FROM performance_schema.keyring_component_status WHERE STATUS_KEY='Data_file';")
+            venki_debug "Keyring data is in ${keyring_component_data_file}"
+
+            # QQ: Can this check be avoided. We got this info from server, so it is safe to assume that this file exists.?
+            if [ -f ${keyring_component_data_file} ]; then
+                file_size=$(stat -c'%s' ${keyring_component_data_file})
+                if [ $file_size -eq 0 ]; then
+                    wsrep_log_error "******************* FATAL ERROR ********************** "
+                    wsrep_log_error "FATAL: keyring component is enabled but keyring_file_data" \
+                                    "is empty."
+                    wsrep_log_error "Line $LINENO"
+                    wsrep_log_error "****************************************************** "
+                    exit 22
+                fi
+            fi
+        fi
+        # if [[ $keyring_component_type == "component_keyring_kms" ]]; then
+        #     # component_keyring_kms code comes here
+        # fi
+
+        # if [[ $keyring_component_type == "component_keyring_kmip" ]]; then
+        #     # component_keyring_kmip code comes here
+        # fi
+
+        # if [[ $keyring_component_type == "component_keyring_vault" ]]; then
+        #     # component_keyring_vault code comes here - Not supported as of now
+        # fi
+    fi
+
+    # raise error if keyring_component is enabled but transit encryption is not
+    if [[ $keyring_component_donor_active -eq 1 && $encrypt -le 0 ]]; then
+        wsrep_log_error "******************* FATAL ERROR ********************** "
+        wsrep_log_error "FATAL: keyring component is enabled but transit channel" \
+                        "is unencrypted. Enable encryption for SST traffic"
+        wsrep_log_error "Line $LINENO"
+        wsrep_log_error "****************************************************** "
+        exit 22
+    fi
+
     # raise error if keyring_plugin is enabled but transit encryption is not
     if [[ $keyring_plugin -eq 1 && $encrypt -le 0 ]]; then
         wsrep_log_error "******************* FATAL ERROR ********************** "
@@ -1879,8 +1960,15 @@ then
     echo "binlog-name=$(basename "$WSREP_SST_OPT_BINLOG")" >> "$sst_info_file_path"
     echo "mysql-version=$MYSQL_VERSION" >> "$sst_info_file_path"
     # append transition_key only if keyring is being used.
-    if [[ $keyring_plugin -eq 1 ]]; then
+    if [[ $keyring_plugin -eq 1 || $keyring_component_donor_active -eq 1 ]]; then
+        venki_debug "Writing transition_key to sst info file"
         echo "transition-key=$transition_key" >> "$sst_info_file_path"
+
+        if [[ $keyring_component_donor_active -eq 1 ]]; then
+            echo "keyring-component-type=$keyring_component_type" >> "$sst_info_file_path"
+            cat_file_to_stderr "$sst_info_file_path" "INF" "SST_INFO"
+        fi
+
         encrypt_backup_options="--transition-key=$transition_key"
     fi
 
@@ -2066,7 +2154,11 @@ then
                [[ $DONOR_MYSQL_VERSION != "5.7.28-31-57.2" ]]; then
                 transition_key="\$transition_key"
             fi
-
+        
+            keyring_component_type=$(parse_sst_info "$sst_file_info_path" sst keyring-component-type "")
+            cat_file_to_stderr "$sst_file_info_path"  "INF" "SST-INFO"
+            venki_debug "Received component_type: $keyring_component_type"
+            venki_debug "Found transition-key $transition_key"
             encrypt_prepare_options="--transition-key=$transition_key"
             encrypt_move_options="--transition-key=$transition_key --generate-new-master-key"
         fi
@@ -2213,14 +2305,25 @@ then
             fi
         fi
 
-        if [[ $keyring_plugin -eq 0 && -n $transition_key ]]; then
+        venki_debug "Joiner: transition_key: $transition_key keyring_plugin: $keyring_plugin, keyring_component_joiner_autoconfig: $keyring_component_joiner_autoconfig"
+        if [[ -n $transition_key && $keyring_plugin -eq 0 && $keyring_component_joiner_autoconfig -eq 0 ]]; then
             wsrep_log_error "******************* FATAL ERROR ********************** "
-            wsrep_log_error "FATAL: DONOR is configured to use keyring_plugin" \
+            wsrep_log_error "FATAL: DONOR is configured to use keyring component/plugin" \
                             "(file/vault) but JOINER is not"
             wsrep_log_error "Line $LINENO"
             wsrep_log_error "****************************************************** "
             exit 32
         fi
+
+        if [ $keyring_component_joiner_autoconfig -eq 1 ]; then
+
+            venki_debug "Detected component-auto-config in [sst] secion"
+            if [ $keyring_component_type == "component_keyring_file" ]; then
+                # Handle joiner side component_keyring_file here
+                setup_component_config "$keyring_component_type" "$JOINER_SST_DIR"
+            fi
+        fi
+
 
         if ! ps -p ${WSREP_SST_OPT_PARENT} &>/dev/null
         then
