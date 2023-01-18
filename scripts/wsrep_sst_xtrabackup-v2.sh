@@ -2100,7 +2100,7 @@ then
 
     # Get keyring component status
     get_mysqld_path
-    plugin_dir=$(parse_cnf mysqld plugin_dir "")
+    plugin_dir=$WSREP_SST_OPT_PLUGINDIR
     venki_debug "Using plugin_dir: $plugin_dir"
     get_keyring_manifest_and_config "${DATA}" ${plugin_dir}
 

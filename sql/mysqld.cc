@@ -7012,13 +7012,6 @@ static int init_server_components() {
     }
   }
 
-  /* Reload keyring post SST if it is a joiner */
-  if (wsrep_provider_set && !wsrep_new_cluster && srv_keyring_load &&
-      (srv_keyring_load->load(opt_plugin_dir, mysql_real_data_home) != 0)) {
-    /* We encountered an error. Figure out what it is. */
-    WSREP_ERROR("Could not properly reload keyring component");
-  }
-
   /*
    * Forcing a new setwd in case the SST mounted the datadir
    */
