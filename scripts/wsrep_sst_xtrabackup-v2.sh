@@ -72,6 +72,12 @@ uextra=0
 
 keyring_plugin=0
 
+# Keyring component variables
+keyring_component_type=""
+keyring_component_enabled=0
+keyring_manifest_file=""
+keyring_config_file=""
+
 keyring_file_data=""
 keyring_vault_config=""
 
@@ -780,7 +786,7 @@ read_cnf()
 
     # Buildup the list of files to keep in the datadir
     # (These files will not be REMOVED on the joiner node)
-    cpat=$(parse_cnf sst cpat '.*\.pem$\|.*init\.ok$\|.*galera\.cache$\|.*sst_in_progress$\|.*sst-xb-tmpdir$\|.*gvwstate\.dat$\|.*grastate\.dat$\|.*\.err$\|.*\.log$\|.*RPM_UPGRADE_MARKER$\|.*RPM_UPGRADE_HISTORY$')
+    cpat=$(parse_cnf sst cpat '.*\.pem$\|.*init\.ok$\|.*galera\.cache$\|.*sst_in_progress$\|.*sst-xb-tmpdir$\|.*gvwstate\.dat$\|.*grastate\.dat$\|.*\.err$\|.*\.log$\|.*RPM_UPGRADE_MARKER$\|.*RPM_UPGRADE_HISTORY$\|component_keyring_*\.cnf$\|mysqld.my$')
 
     # Keep the donor's keyring file
     cpat+="\|.*/${XB_DONOR_KEYRING_FILE}$"
@@ -1006,6 +1012,61 @@ cleanup_donor()
     rm -rf "${KEYRING_FILE_DIR}/${XB_DONOR_KEYRING_FILE}" || true
 
     exit $estatus
+}
+
+#
+# Get the keyring manifest and config file paths
+#
+# 1st param: Datadir
+# 2nd param: Plugin dir
+
+get_keyring_manifest_and_config()
+{
+    local datadir=$1
+    local plugin_dir=$2
+
+    local manifest_file=""
+    local config_file=""
+
+    local mysqld_dir=$(dirname $MYSQLD_PATH)
+
+    # Get keyring manifest file path
+    if [ -e $mysqld_dir/mysqld.my ]; then
+        local local_manifest=$(cat $mysqld_dir/mysqld.my | tr "\n" ' ' | grep "read_local_manifest" | cut -d: -f2 | grep -oF "true")
+        if [[ $local_manifest == "true" ]]; then
+            # Handle local manifest file
+            if [ -e $datadir/mysqld.my ]; then
+                manifest_file=$datadir/mysqld.my
+            fi
+        else
+            # Handle global manifest file
+            manifest_file=$mysqld_dir/mysqld.my
+        fi
+    fi
+
+    if [ -e $manifest_file ]; then
+        # Get the type of the component
+        keyring_component_type=$(grep -o "component_keyring_[a-z]*" $manifest_file | head -n 1)
+
+        # Get keyring config path
+        if [ -e $plugin_dir/$keyring_component_type.cnf ]; then
+            local local_config=$(cat $plugin_dir/$keyring_component_type.cnf | tr "\n" ' ' | grep "read_local_config" | cut -d: -f2 | grep -oF "true")
+            if [[ $local_config == "true" ]]; then
+                # Handle local config file
+                config_file=$datadir/$keyring_component_type.cnf
+            else
+                # Handle global config file
+                config_file=$plugin_dir/$keyring_component_type.cnf
+            fi
+        fi
+
+    venki_debug "Using manifest file: $manifest_file"
+    venki_debug "Using component: $keyring_component_type"
+    venki_debug "Using config_file: $config_file"
+    keyring_manifest_file=$manifest_file
+    keyring_config_file=$config_file
+
+    fi
 }
 
 setup_ports()
@@ -1855,6 +1916,28 @@ then
     # main temp directory for SST (non-XB) related files
     donor_tmpdir=$(mktemp --tmpdir="${tmpdirbase}" --directory donor_tmp_XXXX)
 
+    #------- KEYRING config parsing
+    #======================================================================
+    # Query the donor server for keyring component.
+    venki_debug "Now: SST user: ${WSREP_SST_OPT_USER} SST Pass: ${WSREP_SST_OPT_PSWD}" 
+    keyring_is_active=$(exec_sql ${WSREP_SST_OPT_USER} ${WSREP_SST_OPT_PSWD} ${WSREP_SST_OPT_SOCKET} \
+    "SELECT STATUS_VALUE FROM performance_schema.keyring_component_status WHERE STATUS_KEY='Component_status';")
+    venki_debug "keyring_is_active: ${keyring_is_active}"
+
+    if [[ "${keyring_is_active}" == "Active" ]]; then
+        keyring_component_enabled=1
+    fi
+
+    # raise error if keyring_component is enabled but transit encryption is not
+    if [[ $keyring_component_enabled -eq 1 && $encrypt -le 0 ]]; then
+        wsrep_log_error "******************* FATAL ERROR ********************** "
+        wsrep_log_error "FATAL: keyring component is enabled but transit channel" \
+                        "is unencrypted. Enable encryption for SST traffic"
+        wsrep_log_error "Line $LINENO"
+        wsrep_log_error "****************************************************** "
+        exit 22
+    fi
+
     # raise error if keyring_plugin is enabled but transit encryption is not
     if [[ $keyring_plugin -eq 1 && $encrypt -le 0 ]]; then
         wsrep_log_error "******************* FATAL ERROR ********************** "
@@ -1879,7 +1962,7 @@ then
     echo "binlog-name=$(basename "$WSREP_SST_OPT_BINLOG")" >> "$sst_info_file_path"
     echo "mysql-version=$MYSQL_VERSION" >> "$sst_info_file_path"
     # append transition_key only if keyring is being used.
-    if [[ $keyring_plugin -eq 1 ]]; then
+    if [[ $keyring_plugin -eq 1 || $keyring_component_enabled -eq 1 ]]; then
         echo "transition-key=$transition_key" >> "$sst_info_file_path"
         encrypt_backup_options="--transition-key=$transition_key"
     fi
@@ -2014,6 +2097,25 @@ then
     MODULE="xtrabackup_sst"
 
     rm -f "${DATA}/${IST_FILE}"
+
+    # Get keyring component status
+    get_mysqld_path
+    plugin_dir=$(parse_cnf mysqld plugin_dir "")
+    venki_debug "Using plugin_dir: $plugin_dir"
+    get_keyring_manifest_and_config "${DATA}" ${plugin_dir}
+
+    if [[ -z plugin_dir && -n $keyring_manifest_file ]]; then
+        wsrep_log_error "******************* FATAL ERROR ********************** "
+        wsrep_log_error "FATAL: The server is configured to use keyring, but the plugin_dir is not set."
+        wsrep_log_error "Please set the plugin_dir in the cnf file and retry."
+        wsrep_log_error "****************************************************** "
+        exit 32
+    fi
+
+    if [[ -r $keyring_manifest_file && -r $keyring_config_file ]]; then
+        # Get the type of the keyring given in the manifest file
+        keyring_component_enabled=1
+    fi
 
     # May need xtrabackup_checkpoints later on
     rm -f ${DATA}/xtrabackup_binary ${DATA}/xtrabackup_galera_info  ${DATA}/xtrabackup_logfile
@@ -2151,6 +2253,18 @@ then
             JOINER_SST_DIR=$(mktemp -p "${tmpdirbase}" -dt sst_XXXX)
         fi
 
+        # if keyring_component is enabled on JOINER and DONOR failed to send transition_key
+        # DONOR is not configured to use keyring_component
+
+        if [[ $keyring_component_enabled -eq 1 && -z $transition_key ]]; then
+            wsrep_log_error "******************* FATAL ERROR ********************** "
+            wsrep_log_error "FATAL: JOINER is configured to use keyring_component" \
+                            "but DONOR is not"
+            wsrep_log_error "Line $LINENO"
+            wsrep_log_error "****************************************************** "
+            exit 32
+
+        fi
         # server-id is already part of backup-my.cnf so avoid appending it.
         # server-id is the id of the node that is acting as donor and not joiner node.
 
@@ -2213,13 +2327,27 @@ then
             fi
         fi
 
-        if [[ $keyring_plugin -eq 0 && -n $transition_key ]]; then
+        if [[ -n $transition_key && $keyring_plugin -eq 0 && $keyring_component_enabled -eq 0 ]]; then
             wsrep_log_error "******************* FATAL ERROR ********************** "
-            wsrep_log_error "FATAL: DONOR is configured to use keyring_plugin" \
+            wsrep_log_error "FATAL: DONOR is configured to use keyring component/plugin" \
                             "(file/vault) but JOINER is not"
             wsrep_log_error "Line $LINENO"
             wsrep_log_error "****************************************************** "
             exit 32
+        fi
+
+        if [ $keyring_component_enabled -eq 1 ]; then
+            # Handle joiner side component specific cnf file here
+            if [ ! -e $keyring_config_file ]; then
+                wsrep_log_error "******************* FATAL ERROR ********************** "
+                wsrep_log_error "FATAL: JOINER is not configured properly to use keyring component" \
+                                "Please create the component's config file and retry."
+                wsrep_log_error "Line $LINENO"
+                wsrep_log_error "****************************************************** "
+                exit 32
+            fi
+            venki_debug "Copying $keyring_config_file to $JOINER_SST_DIR"
+            cp $keyring_config_file "$JOINER_SST_DIR"
         fi
 
         if ! ps -p ${WSREP_SST_OPT_PARENT} &>/dev/null
@@ -2241,8 +2369,10 @@ then
         wsrep_log_info "Proceeding with SST........."
 
         wsrep_log_debug "Cleaning the existing datadir and innodb-data/log directories"
+        venki_debug "Cleaning the existing datadir and innodb-data/log directories"
         # Avoid emitting the find command output to log file. It just fill the
         # with ever increasing number of files and achieve nothing.
+        venki_debug "Running command: find $ib_home_dir $ib_log_dir $ib_undo_dir $DATA -mindepth 1  -regex $cpat  -prune  -o -exec rm -rfv {} 1>/dev/null \+"
         find $ib_home_dir $ib_log_dir $ib_undo_dir $DATA -mindepth 1  -regex $cpat  -prune  -o -exec rm -rfv {} 1>/dev/null \+
 
         if [[ -z $transition_key ]]; then
@@ -2406,6 +2536,21 @@ then
 
         # If there is keyring file, move back needs to keep it and
         # add its keys there
+
+        if [ $keyring_component_enabled -eq 1 ]; then
+            # Handle joiner side component specific cnf file here
+            if [ ! -e ${JOINER_SST_DIR}/$keyring_component_type.cnf ]; then
+                wsrep_log_error "******************* FATAL ERROR ********************** "
+                wsrep_log_error "FATAL: JOINER is not configured properly to use the keyring component"
+                wsrep_log_error "during innomove stage. "
+                wsrep_log_error "Please create the component's config file and retry."
+                wsrep_log_error "Line $LINENO"
+                wsrep_log_error "****************************************************** "
+                exit 32
+            fi
+            venki_debug "Copying ${JOINER_SST_DIR}/$keyring_component_type.cnf back to ${TDATA}"
+            cp $JOINER_SST_DIR/$keyring_component_type.cnf ${TDATA}
+        fi
 
         wsrep_log_info "Moving the backup to ${TDATA}"
 

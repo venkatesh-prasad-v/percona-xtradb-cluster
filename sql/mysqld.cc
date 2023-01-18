@@ -6963,7 +6963,11 @@ static int init_server_components() {
 
   /* Init server even for recover as it is needed for initialization
   of THD structure. */
+  fprintf(stderr,"VP: Before wsrep_init_server\n");
   if (wsrep_init_server()) unireg_abort(MYSQLD_ABORT_EXIT);
+  fprintf(stderr,"VP: After wsrep_init_server\n");
+
+
 
   if (!wsrep_recovery) {
     if (pxc_encrypt_cluster_traffic && !opt_initialize &&
@@ -7006,6 +7010,13 @@ static int init_server_components() {
         wsrep_init_startup(true);
       }
     }
+  }
+
+  /* Reload keyring post SST if it is a joiner */
+  if (wsrep_provider_set && !wsrep_new_cluster && srv_keyring_load &&
+      (srv_keyring_load->load(opt_plugin_dir, mysql_real_data_home) != 0)) {
+    /* We encountered an error. Figure out what it is. */
+    WSREP_ERROR("Could not properly reload keyring component");
   }
 
   /*
@@ -8454,6 +8465,8 @@ int mysqld_main(int argc, char **argv)
     uses. This part doesn't use any more MySQL-specific functionalities but
     error logging and PFS.
   */
+  using namespace std;
+  cout << "VP: Before component_infrastructure_init " << endl;
   if (component_infrastructure_init()) {
     flush_error_log_messages();
     return 1;
@@ -8470,6 +8483,7 @@ int mysqld_main(int argc, char **argv)
       return 1;
     }
 
+    cout << "VP: Before initialize_manifest_file_components() " << endl;
     if (initialize_manifest_file_components()) {
       flush_error_log_messages();
       return 1;
@@ -8480,6 +8494,7 @@ int mysqld_main(int argc, char **argv)
       by such a component should get priority over keyring plugin. That's why
       we have to set defaults before proxy keyring services are loaded.
     */
+    cout << "VP: Before set_srv_keyring_implementation_as_default() " << endl;
     set_srv_keyring_implementation_as_default();
   }
 
