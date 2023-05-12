@@ -77,10 +77,35 @@ ELSE()
     MESSAGE(SEND_ERROR "Missing Makefile in rocksdb directory. Try \"git submodule update\".")
   ENDIF()
 
+  # We assume that make checkout_folly has already been run before attempting
+  # to build with folly.
+  IF(ROCKSDB_FOLLY)
+    IF (NOT EXISTS "${CMAKE_SOURCE_DIR}/rocksdb/third-party/folly")
+      MESSAGE(SEND_ERROR "Missing folly in rocksdb directory. Try \"make checkout_folly\".")
+    ENDIF()
+    ADD_DEFINITIONS(-DUSE_FOLLY -DFOLLY_NO_CONFIG)
+    INCLUDE_DIRECTORIES(
+      ${ROCKSDB_ROOT}/third-party/folly
+    )
+    IF (WITH_GLOG)
+      FIND_LIBRARY(GLOG_LIBRARY
+        NAMES libglog${PIC_EXT}.a glog
+        HINTS ${WITH_GLOG}/lib)
+      SET(rocksdb_static_libs ${rocksdb_static_libs}
+        ${GLOG_LIBRARY})
+    ENDIF()
+    IF (WITH_GFLAGS)
+      FIND_LIBRARY(GFLAGS_LIBRARY
+        NAMES libgflags${PIC_EXT}.a gflags
+        HINTS ${WITH_GFLAGS}/lib)
+      SET(rocksdb_static_libs ${rocksdb_static_libs}
+        ${GFLAGS_LIBRARY})
+    ENDIF()
+  ENDIF()
   # get a list of rocksdb library source files
   # run with env -i to avoid passing variables
   EXECUTE_PROCESS(
-    COMMAND env -i ${CMAKE_CURRENT_SOURCE_DIR}/get_rocksdb_files.sh
+    COMMAND env -i ${CMAKE_CURRENT_SOURCE_DIR}/get_rocksdb_files.sh ${ROCKSDB_FOLLY}
     OUTPUT_VARIABLE SCRIPT_OUTPUT
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   )
@@ -291,9 +316,10 @@ ENDIF()
 # Suppress warnings for gcc-12 or newer
 IF(CMAKE_COMPILER_IS_GNUCXX AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 12)
   IF(HAVE_AVX512F)
-    MESSAGE(STATUS "AVX-512: add -Wno-uninitialized for xxhash.cc (check https://gcc.gnu.org/bugzilla/show_bug.cgi?id=105593)")
-    ADD_CXX_COMPILE_FLAGS_TO_FILES(-Wno-uninitialized -Wno-maybe-uninitialized FILES rocksdb/util/xxhash.cc ${BUNDLED_LZ4_PATH}/xxhash.c)
+    MESSAGE(STATUS "AVX-512: add -Wno-uninitialized flag (check https://gcc.gnu.org/bugzilla/show_bug.cgi?id=105593)")
+    append_cflags_if_supported(-Wno-maybe-uninitialized -Wno-uninitialized)
   ENDIF()
+  ADD_CXX_COMPILE_FLAGS_TO_FILES(-Wno-maybe-uninitialized FILES rocksdb/db/blob/blob_file_reader.cc)
 ENDIF()
 
 # Suppress warnings for gcc ASan build
@@ -316,17 +342,8 @@ INCLUDE_DIRECTORIES(
   ${ROCKSDB_ROOT}/third-party/gtest-1.8.1/fused-src
 )
 
-IF(BUILD_BUNDLED_ZSTD)
-  INCLUDE_DIRECTORIES(BEFORE SYSTEM
-    ${ZSTD_INCLUDE_DIR}/dictBuilder)
-ENDIF()
-
-# add bundled compression code
-SET(ZSTD_SOURCES ${BUNDLED_LZ4_PATH}/xxhash.c)
-
 SET(ROCKSDB_SOURCES
   ${ROCKSDB_SOURCES}
-  ${ZSTD_SOURCES}
   ha_rocksdb.cc ha_rocksdb.h ha_rocksdb_proto.h
   logger.h
   rdb_datadic.cc rdb_datadic.h
@@ -345,6 +362,7 @@ SET(ROCKSDB_SOURCES
   rdb_utils.cc rdb_utils.h rdb_buff.h
   rdb_threads.cc rdb_threads.h
   ha_rockspart.cc ha_rockspart.h
+  sql_dd.cc sql_dd.h
 )
 
 IF(WITH_FB_TSAN)
@@ -357,7 +375,7 @@ IF(HAVE_EXTERNAL_ROCKSDB)
   SET(rocksdb_static_libs ${rocksdb_static_libs} "${ROCKSDB_LIB_PATH}/${ROCKSDB_LIB_NAME}")
 ENDIF()
 
-SET(rocksdb_static_libs ${rocksdb_static_libs} ${ZLIB_LIBRARY} ${ZSTD_LIBRARY} ${LZ4_LIBRARY} "-ldl" ${PLUGIN_LD})
+SET(rocksdb_static_libs ${rocksdb_static_libs} ext::zlib ext::zstd ext::lz4 extra::rapidjson "-ldl" ${PLUGIN_LD})
 IF(NOT CMAKE_SYSTEM_NAME MATCHES "Darwin")
   SET(rocksdb_static_libs ${rocksdb_static_libs} "-lrt")
 ENDIF()
@@ -372,17 +390,14 @@ IF (NOT HAVE_EXTERNAL_ROCKSDB)
     ${CMAKE_CURRENT_SOURCE_DIR}/rocksdb/tools/ldb_tool.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/rocksdb/tools/ldb_cmd.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/rocksdb/tools/sst_dump_tool.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/rocksdb/utilities/blob_db/blob_dump_tool.cc
     ${ROCKSDB_LIB_SOURCES}
-    ${ZSTD_SOURCES}
   )
   MYSQL_ADD_EXECUTABLE(sst_dump ${CMAKE_CURRENT_SOURCE_DIR}/rocksdb/tools/sst_dump.cc ${ROCKSDB_TOOL_SOURCES})
   TARGET_LINK_LIBRARIES(sst_dump ${rocksdb_static_libs})
 
   MYSQL_ADD_EXECUTABLE(ldb ${CMAKE_CURRENT_SOURCE_DIR}/rocksdb/tools/ldb.cc ${ROCKSDB_TOOL_SOURCES})
   TARGET_LINK_LIBRARIES(ldb ${rocksdb_static_libs})
-
-  MYSQL_ADD_EXECUTABLE(mysql_ldb ${CMAKE_CURRENT_SOURCE_DIR}/tools/mysql_ldb.cc ${ROCKSDB_TOOL_SOURCES})
-  TARGET_LINK_LIBRARIES(mysql_ldb ${rocksdb_static_libs})
 
   IF (WITH_ZENFS_UTILITY)
     FIND_PATH(GFLAGS_INCLUDE_DIR
@@ -393,7 +408,7 @@ IF (NOT HAVE_EXTERNAL_ROCKSDB)
       MESSAGE(FATAL_ERROR "Cannot find system gflags library.")
     ENDIF()
 
-    MYSQL_ADD_EXECUTABLE(zenfs ${CMAKE_CURRENT_SOURCE_DIR}/rocksdb_plugins/zenfs/util/zenfs.cc ${ROCKSDB_LIB_SOURCES} ${ZENFS_PLUGIN_SOURCES} ${ZSTD_SOURCES})
+    MYSQL_ADD_EXECUTABLE(zenfs ${CMAKE_CURRENT_SOURCE_DIR}/rocksdb_plugins/zenfs/util/zenfs.cc ${ROCKSDB_LIB_SOURCES} ${ZENFS_PLUGIN_SOURCES})
     TARGET_LINK_LIBRARIES(zenfs ${rocksdb_static_libs} ${GFLAGS_SYSTEM_LIBRARY})
 
     EXECUTE_PROCESS(COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/tmp_gen/rocksdb/plugin")
