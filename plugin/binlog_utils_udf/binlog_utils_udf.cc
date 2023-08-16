@@ -15,7 +15,7 @@
 #include <mysqlpp/udf_wrappers.hpp>
 
 #include <sql/binlog.h>
-#include <sql/binlog/tools/iterators.h>
+#include <sql/binlog/decompressing_event_object_istream.h>
 #include <sql/binlog_reader.h>
 
 namespace {
@@ -137,7 +137,7 @@ ext::string_view extract_sys_var_value(ext::string_view component_name,
   return {static_cast<char *>(ptr), length};
 }
 
-using log_event_ptr = std::unique_ptr<Log_event>;
+using log_event_ptr = std::shared_ptr<Log_event>;
 using fn_reflen_buffer = char[FN_REFLEN + 1];
 
 const char *check_and_normalize_binlog_name(ext::string_view binlog_name,
@@ -175,12 +175,13 @@ log_event_ptr find_first_event(ext::string_view binlog_name) {
   if (reader.open(search_file_name, 0))
     throw std::runtime_error(reader.get_error_str());
 
-  binlog::tools::Iterator it(&reader);
-  log_event_ptr ev{it.begin()};
+  binlog::Decompressing_event_object_istream istream{reader};
+  log_event_ptr ev;
+  istream >> ev;
 
   if (reader.has_fatal_error())
     throw std::runtime_error(reader.get_error_str());
-  if (it.has_error()) throw std::runtime_error(it.get_error_message());
+  if (istream.has_error()) throw std::runtime_error(istream.get_error_str());
 
   return ev;
 }
@@ -203,18 +204,20 @@ log_event_ptr find_last_event(ext::string_view binlog_name) {
   if (!mysql_bin_log.is_active(search_file_name))
     end_pos = std::numeric_limits<my_off_t>::max();
 
-  binlog::tools::Iterator it(&reader);
-  log_event_ptr ev{it.begin()};
+  binlog::Decompressing_event_object_istream istream{reader};
+  log_event_ptr ev;
+  istream >> ev;
+  if (istream.has_error()) throw std::runtime_error(istream.get_error_str());
 
   while (true) {
     if (reader.has_fatal_error())
       throw std::runtime_error(reader.get_error_str());
-    if (it.has_error()) throw std::runtime_error(it.get_error_message());
     if (ev->common_header->log_pos >= end_pos) break;
-    log_event_ptr next_ev{it.next()};
-    if (next_ev.get() == it.end()) break;
+    log_event_ptr next_ev;
+    if (!(istream >> next_ev)) break;
     ev.swap(next_ev);
   }
+  if (istream.has_error()) throw std::runtime_error(istream.get_error_str());
   return ev;
 }
 
@@ -237,16 +240,15 @@ log_event_ptr find_previous_gtids_event(ext::string_view binlog_name) {
     end_pos = std::numeric_limits<my_off_t>::max();
 
   log_event_ptr ev;
-  binlog::tools::Iterator it(&reader);
+  binlog::Decompressing_event_object_istream istream{reader};
 
-  for (log_event_ptr ev{it.begin()}; ev.get() != it.end();) {
+  while (istream >> ev) {
     if (reader.has_fatal_error())
       throw std::runtime_error(reader.get_error_str());
-    if (it.has_error()) throw std::runtime_error(it.get_error_message());
     if (ev->get_type_code() == binary_log::PREVIOUS_GTIDS_LOG_EVENT) return ev;
     if (ev->common_header->log_pos >= end_pos) break;
-    ev.reset(it.next());
   }
+  if (istream.has_error()) throw std::runtime_error(istream.get_error_str());
   return {};
 }
 
@@ -291,19 +293,18 @@ log_event_ptr find_last_gtid_event(ext::string_view binlog_name) {
   if (!mysql_bin_log.is_active(search_file_name))
     end_pos = std::numeric_limits<my_off_t>::max();
 
-  log_event_ptr last_gtid_ev;
-  binlog::tools::Iterator it(&reader);
+  log_event_ptr ev, last_gtid_ev;
+  binlog::Decompressing_event_object_istream istream{reader};
 
-  for (log_event_ptr ev{it.begin()}; ev.get() != it.end();) {
+  while (istream >> ev) {
     if (reader.has_fatal_error())
       throw std::runtime_error(reader.get_error_str());
-    if (it.has_error()) throw std::runtime_error(it.get_error_message());
     auto ev_row = ev.get();
     if (ev_row->get_type_code() == binary_log::GTID_LOG_EVENT)
       last_gtid_ev = std::move(ev);
     if (ev_row->common_header->log_pos >= end_pos) break;
-    ev.reset(it.next());
   }
+  if (istream.has_error()) throw std::runtime_error(istream.get_error_str());
   return last_gtid_ev;
 }
 
