@@ -63,6 +63,9 @@
 #include "sql/sql_class.h"    // THD
 #include "sql/system_variables.h"
 #include "sql/table.h"
+#ifdef WITH_WSREP
+#include "sql/wsrep_async_applier_manager.h"
+#endif /* WITH_WSREP */
 
 class Commit_order_manager;
 class Master_info;
@@ -1850,6 +1853,13 @@ class Relay_log_info : public Rpl_info {
    */
   Commit_order_manager *commit_order_mngr;
 
+#ifdef WITH_WSREP
+  /*
+    Wsrep_async_replica_applier_manager orders commits and TOI replication made
+    by its workers.
+   */
+  Wsrep_async_replica_applier_manager *wsrep_async_replica_applier_manager;
+#endif /* WITH_WSREP */
   /**
     Delay slave SQL thread by this amount of seconds.
     The delay is applied per transaction and based on the immediate master's

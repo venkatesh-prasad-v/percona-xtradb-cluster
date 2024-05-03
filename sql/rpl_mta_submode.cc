@@ -58,6 +58,10 @@
 #include "sql/system_variables.h"
 #include "sql/table.h"
 
+#ifdef WITH_WSREP
+#include "sql/wsrep_async_applier_manager.h"       // wsrep_async_replica_applier_manager
+#endif /* WITH_WSREP */
+
 /**
  Does necessary arrangement before scheduling next event.
  @return 1  if  error
@@ -928,6 +932,20 @@ Slave_worker *Mts_submode_logical_clock::get_least_occupied_worker(
     }
     if (rli->get_commit_order_manager() != nullptr && worker != nullptr)
       rli->get_commit_order_manager()->register_trx(worker);
+
+#ifdef WITH_WSREP
+    if (WSREP_ON && worker != nullptr) {
+      extern Wsrep_async_replica_applier_manager wsrep_async_replica_applier_manager;
+
+      async_trx_info trx_info;
+      trx_info.sw = worker;
+      trx_info.type = enum_trx_type::NOT_SET;
+      trx_info.status = enum_trx_status::s_not_started;
+      trx_info.channel = rli->get_channel();
+      wsrep_async_replica_applier_manager.register_trx(&trx_info);
+    }
+
+#endif /* WITH_WSREP */
   }
 
   assert(ptr_group);

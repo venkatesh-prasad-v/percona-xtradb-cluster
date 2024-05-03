@@ -58,6 +58,7 @@
 #include "wsrep_schema.h"
 #include "wsrep_server_state.h"
 #include "wsrep_trans_observer.h"
+#include "wsrep_async_applier_manager.h"
 
 #ifdef HAVE_PSI_INTERFACE
 #include <map>
@@ -186,6 +187,8 @@ const char *wsrep_provider_version = provider_version;
 const char *wsrep_provider_vendor = provider_vendor;
 char *wsrep_provider_capabilities = NULL;
 char *wsrep_cluster_capabilities = NULL;
+
+Wsrep_async_replica_applier_manager wsrep_async_replica_applier_manager;
 // wsrep status variable - end
 
 wsrep_uuid_t local_uuid = WSREP_UUID_UNDEFINED;
