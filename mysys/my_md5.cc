@@ -41,6 +41,10 @@
 #include <openssl/md5.h>
 #endif /* OPENSSL_VERSION_NUMBER >= 0x30000000L */
 
+#ifdef WITH_WSREP
+#include "md5.h"
+#endif
+
 static void my_md5_hash(unsigned char *digest, unsigned const char *buf,
                         size_t len) {
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
@@ -95,38 +99,86 @@ then a md5-hash (16 bytes) string is generated using the complete record.
 Following functions act as helper function in generation of this md5-hash. */
 
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
-void *wsrep_md5_init() {
+static void *wsrep_md5_init_openssl() {
   EVP_MD_CTX *ctx = EVP_MD_CTX_new();
   EVP_DigestInit_ex2(ctx, EVP_md5(), nullptr);
   return (void *)ctx;
 }
 
-void wsrep_md5_update(void *ctx, char *buf, int len) {
+static void wsrep_md5_update_openssl(void *ctx, char *buf, int len) {
   EVP_DigestUpdate((EVP_MD_CTX *)ctx, buf, len);
 }
 
-void wsrep_compute_md5_hash(unsigned char *digest, void *ctx) {
+static void wsrep_compute_md5_hash_openssl(unsigned char *digest, void *ctx) {
   unsigned int md_len;
   EVP_DigestFinal_ex((EVP_MD_CTX *)ctx, digest, &md_len);
   EVP_MD_CTX_free((EVP_MD_CTX *)ctx);
 }
 
 #else  /* OPENSSL_VERSION_NUMBER >= 0x30000000L */
-void *wsrep_md5_init() {
+static void *wsrep_md5_init_openssl() {
   MD5_CTX *ctx = new MD5_CTX();
   MD5_Init(ctx);
   return (void *)ctx;
 }
 
-void wsrep_md5_update(void *ctx, char *buf, int len) {
+static void wsrep_md5_update_openssl(void *ctx, char *buf, int len) {
   MD5_Update((MD5_CTX *)(ctx), buf, len);
 }
 
-void wsrep_compute_md5_hash(unsigned char *digest, void *ctx) {
+static void wsrep_compute_md5_hash_openssl(unsigned char *digest, void *ctx) {
   MD5_Final(digest, (MD5_CTX *)ctx);
   delete (MD5_CTX *)ctx;
 }
 #endif /* OPENSSL_VERSION_NUMBER >= 0x30000000L */
 
+/* Non-OpenSSL implementation start */
+using namespace websocketpp::md5;
+
+static void *wsrep_md5_init_custom() {
+  md5_state_t *ctx = new md5_state_t();
+  md5_init(ctx);
+  return ctx;
+}
+
+static void wsrep_md5_update_custom(void *ctx, char *buf, int len) {
+  md5_append((md5_state_t *)ctx, (md5_byte_t *)buf, len);
+}
+
+static void wsrep_compute_md5_hash_custom(unsigned char *digest, void *ctx) {
+  md5_finish((md5_state_t *)ctx, digest);
+  delete (md5_state_t *)ctx;
+}
+/* Non-OpenSSL implementation end */
+
+static void *(*wsrep_md5_init_fn)() = &wsrep_md5_init_openssl;
+static void (*wsrep_md5_update_fn)(void *, char *,
+                                   int) = &wsrep_md5_update_openssl;
+static void (*wsrep_compute_md5_hash_fn)(unsigned char *, void *) =
+    &wsrep_compute_md5_hash_openssl;
+
+void *wsrep_md5_init() { return wsrep_md5_init_fn(); }
+
+void wsrep_md5_update(void *ctx, char *buf, int len) {
+  wsrep_md5_update_fn(ctx, buf, len);
+}
+
+void wsrep_compute_md5_hash(unsigned char *digest, void *ctx) {
+  wsrep_compute_md5_hash_fn(digest, ctx);
+}
+
+void wsrep_enable_fips_mode() {
+  wsrep_md5_init_fn = &wsrep_md5_init_custom;
+  wsrep_md5_update_fn = &wsrep_md5_update_custom;
+  wsrep_compute_md5_hash_fn = &wsrep_compute_md5_hash_custom;
+}
+
+/* The following function should be used only by unit tests.
+   It switches the backend implementation back to OpenSSL */
+void wsrep_disable_fips_mode() {
+  wsrep_md5_init_fn = &wsrep_md5_init_openssl;
+  wsrep_md5_update_fn = &wsrep_md5_update_openssl;
+  wsrep_compute_md5_hash_fn = &wsrep_compute_md5_hash_openssl;
+}
+
 #endif /* WITH_WSREP */
- 
