@@ -302,6 +302,7 @@ SET(SERVER_TESTS
   ha_info_iterator
   xid_extract
   log_event_status_size
+  md5
 )
 
 IF(MY_COMPILER_IS_GNU AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 12)
