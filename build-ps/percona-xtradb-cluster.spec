@@ -404,8 +404,10 @@ BuildRequires: 		selinux-policy
 %else
 BuildRequires: 		selinux-policy-devel
 %endif
+%ifarch x86_64
 %if 0%{?compatlib}
 Requires:             percona-xtradb-cluster-shared-compat = %{version}-%{release}
+%endif
 %endif
 Requires:             socat iproute perl-DBI perl-DBD-MySQL
 Requires:       perl(Data::Dumper) which qpress
@@ -546,6 +548,7 @@ This package contains the shared libraries (*.so*) which certain languages
 and applications need to dynamically load and use Percona XtraDB Cluster.
 
 # ----------------------------------------------------------------------------
+%ifarch x86_64
 %if 0%{?compatlib}
 %package -n percona-xtradb-cluster-shared-compat
 Summary:        Shared compat libraries for Percona Server %{compatver}--%{percona_compatver} database client applications
@@ -567,6 +570,7 @@ Conflicts:      Percona-XtraDB-Cluster-shared-compat-57
 %description -n percona-xtradb-cluster-shared-compat
 This package contains the shared compat libraries for Percona Server %{compatver}-%{percona_compatver} client
 applications.
+%endif
 %endif
 
 
@@ -868,13 +872,15 @@ mv $RBR%{_libdir} $RPM_BUILD_DIR/%{_libdir}
     sed -i 's/python2$/python3/' scripts/pyclustercheck.py.in
 %endif
 
-%if 0%{?compatlib}
-# Install compat libs
-%if 0%{?rhel} > 6
-install -D -m 0755 percona-compatlib/usr/lib64/libmysqlclient.so.18.1.0 %{buildroot}%{_libdir}/mysql/libmysqlclient.so.18.1.0
-install -D -m 0755 percona-compatlib/usr/lib64/libmysqlclient_r.so.18.1.0 %{buildroot}%{_libdir}/mysql/libmysqlclient_r.so.18.1.0
-%endif # 0%{?rhel} > 6
-%endif # 0%{?compatlib}
+%ifarch x86_64
+  %if 0%{?compatlib}
+  # Install compat libs
+    %if 0%{?rhel} > 6
+      install -D -m 0755 percona-compatlib/usr/lib64/libmysqlclient.so.18.1.0 %{buildroot}%{_libdir}/mysql/libmysqlclient.so.18.1.0
+      install -D -m 0755 percona-compatlib/usr/lib64/libmysqlclient_r.so.18.1.0 %{buildroot}%{_libdir}/mysql/libmysqlclient_r.so.18.1.0
+    %endif # 0%{?rhel} > 6
+  %endif # 0%{?compatlib}
+%endif
 mkdir -p %{buildroot}%{_bindir}/
 cp -r pxc_extra %{buildroot}%{_bindir}/
 
@@ -1812,6 +1818,7 @@ fi
     %systemd_postun_with_restart garb
 %endif
 # ----------------------------------------------------------------------------
+%ifarch x86_64
 %if 0%{?compatlib}
 %files -n percona-xtradb-cluster-shared-compat
 %defattr(-, root, root, -)
@@ -1821,6 +1828,7 @@ fi
 %{_libdir}/mysql/libmysqlclient.so.%{compatlib}.*
 %{_libdir}/mysql/libmysqlclient_r.so.%{compatlib}.*
 %endif
+%endif
 
 %post -n percona-xtradb-cluster-shared
 /sbin/ldconfig
@@ -1828,6 +1836,7 @@ fi
 %postun -n percona-xtradb-cluster-shared
 /sbin/ldconfig
 
+%ifarch x86_64
 %if 0%{?compatlib}
 %post -n percona-xtradb-cluster-shared-compat
 for lib in libmysqlclient{.so.18.0.0,.so.18,_r.so.18.0.0,_r.so.18}; do
@@ -1844,6 +1853,7 @@ if [ -h %{_libdir}/mysql/${lib} ]; then
 fi
 done
 /sbin/ldconfig
+%endif
 %endif
 
 %postun -n percona-xtradb-cluster-server
