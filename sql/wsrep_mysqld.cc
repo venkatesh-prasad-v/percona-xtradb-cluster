@@ -44,6 +44,7 @@
 #include "sp_head.h"
 #include "sql_base.h"  // TEMP_PREFIX
 #include "wsrep_applier.h"
+#include "wsrep_async_monitor.h"
 #include "wsrep_binlog.h"
 #include "wsrep_priv.h"
 #include "wsrep_sst.h"
@@ -149,6 +150,9 @@ bool pxc_encrypt_cluster_traffic = 0;
 
 ulong wsrep_gcache_encrypt = WSREP_ENCRYPT_MODE_NONE;
 ulong wsrep_disk_pages_encrypt = WSREP_ENCRYPT_MODE_NONE;
+
+/* Enables Async Monitors to avoid TOI deadlocks */
+bool wsrep_use_async_monitor = true;
 
 /* force flush of error message if error is detected at early stage
    during SST or other initialization. */
@@ -2858,6 +2862,42 @@ static void wsrep_RSU_end(THD *thd) {
   thd->variables.wsrep_on = 1;
 }
 
+void thd_enter_async_monitor(THD* thd) {
+
+  // Only replica worker threads are allowed to enter
+  if (thd->system_thread == SYSTEM_THREAD_SLAVE_WORKER) {
+
+    // If the thread is already killed, leave it to the called to handle it.
+    if (thd->killed != THD::NOT_KILLED || thd->wsrep_applier) {
+      return;
+    }
+    Slave_worker *sw = dynamic_cast<Slave_worker*>(thd->rli_slave);
+    Wsrep_async_monitor *wsrep_async_monitor {sw->get_wsrep_async_monitor()};
+    if (wsrep_async_monitor) {
+      auto seqno = sw->sequence_number();
+      assert(seqno > 0);
+      // TODO: If requied, we must set current_mutex and current_cond here
+      // i.e, thd->enter_cond();
+      wsrep_async_monitor->enter(seqno);
+    }
+  }
+}
+
+void thd_leave_async_monitor(THD* thd) {
+
+  if (thd->wsrep_applier) return;
+
+  if (thd->system_thread == SYSTEM_THREAD_SLAVE_WORKER) {
+    Slave_worker * sw = dynamic_cast<Slave_worker*>(thd->rli_slave);
+    Wsrep_async_monitor *wsrep_async_monitor {sw->get_wsrep_async_monitor()};
+    if (wsrep_async_monitor) {
+      auto seqno = sw->sequence_number();
+      assert(seqno > 0);
+      wsrep_async_monitor->leave(seqno);
+    }
+  }
+}
+
 int wsrep_to_isolation_begin(THD *thd, const char *db_, const char *table_,
                              const Table_ref *table_list,
                              dd::Tablespace_table_ref_vec *trefs,
@@ -2954,6 +2994,8 @@ int wsrep_to_isolation_begin(THD *thd, const char *db_, const char *table_,
     thd->variables.auto_increment_increment = 1;
   }
 
+  thd_enter_async_monitor(thd);
+
   DEBUG_SYNC(thd, "wsrep_to_isolation_begin_before_replication");
 
   if (thd->variables.wsrep_on && wsrep_thd_is_local(thd)) {
@@ -3026,6 +3068,8 @@ void wsrep_to_isolation_end(THD *thd) {
     assert(0);
   }
   if (wsrep_emulate_bin_log) wsrep_thd_binlog_trx_reset(thd);
+
+  thd_leave_async_monitor(thd);
 
   DEBUG_SYNC(thd, "wsrep_to_isolation_end_before_wsrep_skip_wsrep_hton");
   mysql_mutex_lock(&thd->LOCK_thd_data);
