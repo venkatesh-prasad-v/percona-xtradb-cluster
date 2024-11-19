@@ -12,7 +12,7 @@ if(WITH_PXB_DEV)
   # Previous LTS
   ExternalProject_Add(pxb80
     GIT_REPOSITORY https://github.com/percona/percona-xtrabackup.git
-    GIT_TAG percona-xtrabackup-8.0.35-30
+    GIT_TAG percona-xtrabackup-8.0.35-31
     GIT_SHALLOW 1
     UPDATE_COMMAND ""
     INSTALL_DIR "${CMAKE_BINARY_DIR}/scripts/pxc_extra/pxb-8.0/"
