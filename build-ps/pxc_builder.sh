@@ -269,8 +269,8 @@ get_sources(){
 }
 
 switch_to_vault_repo() {
-    sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-Linux-*
-    sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-Linux-*
+    sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*
+    sed -i 's|#\s*baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*
 }
 
 get_system(){
@@ -304,7 +304,7 @@ install_deps() {
     CURPLACE=$(pwd)
 
     if [ "x$OS" = "xrpm" ]; then
-        if [ x"$RHEL" = x8 ]; then
+        if [ "x${RHEL}" = "x8" -o "x${RHEL}" = "x7" ]; then
             switch_to_vault_repo
         fi
         RHEL=$(rpm --eval %rhel)
@@ -313,6 +313,9 @@ install_deps() {
         yum install -y perl
         yum install -y https://repo.percona.com/yum/percona-release-latest.noarch.rpm
         percona-release enable tools testing
+	if [ x"$ARCH" = "xaarch64" ]; then
+	    percona-release enable pxb-84-lts testing
+	fi
         if [ "x$RHEL" = "x8" -o "x$RHEL" = "x9" ]; then
             yum -y install dnf-plugins-core epel-release
             yum config-manager --set-enabled powertools
@@ -327,17 +330,24 @@ install_deps() {
             yum -y install readline-devel rpm-build rsync tar time unzip wget zlib-devel selinux-policy-devel
             yum -y install bison boost-devel check-devel cmake libaio-devel libcurl-devel libudev-devel
             yum -y install redhat-rpm-config
-            wget https://archives.fedoraproject.org/pub/archive/fedora/linux/releases/30/Everything/x86_64/os/Packages/r/rpcgen-1.4-2.fc30.x86_64.rpm
-            wget ftp://ftp.pbone.net/mirror/archive.fedoraproject.org/fedora/linux/releases/29/Everything/x86_64/os/Packages/g/gperf-3.1-6.fc29.x86_64.rpm
-            yum -y install rpcgen-1.4-2.fc30.x86_64.rpm gperf-3.1-6.fc29.x86_64.rpm
+	    if [ x"$ARCH" = "xx86_64" ]; then
+                wget https://downloads.percona.com/downloads/packaging/rpcgen-1.4-2.fc30.x86_64.rpm
+                wget https://downloads.percona.com/downloads/packaging/gperf-3.1-6.fc29.x86_64.rpm
+                yum -y install rpcgen-1.4-2.fc30.x86_64.rpm gperf-3.1-6.fc29.x86_64.rpm
+	    else
+		yum -y install yum-utils
+		dnf config-manager --enable ol${RHEL}_codeready_builder
+		yum -y install gperf rpcgen
+	    fi
 
             if [ "x${RHEL}" = "x9" ]; then
-                yum install -y https://yum.oracle.com/repo/OracleLinux/OL9/distro/builder/x86_64/getPackage/procps-ng-devel-3.3.17-8.el9.x86_64.rpm
+                yum install -y https://yum.oracle.com/repo/OracleLinux/OL9/distro/builder/${ARCH}/getPackage/procps-ng-devel-3.3.17-8.el9.x86_64.rpm
                 yum -y install dnf-utils
                 dnf config-manager --enable ol9_codeready_builder
                 yum -y install libedit-devel
                 yum -y install libtirpc-devel
                 yum -y install gcc
+                yum -y install gcc-toolset-12-gcc gcc-toolset-12-gcc-c++ gcc-toolset-12-binutils gcc-toolset-12-annobin-annocheck gcc-toolset-12-annobin-plugin-gcc gcc-toolset-12-libatomic-devel
                 yum -y install scons pip python3-devel
                 pip install --user typing pyyaml regex Cheetah3
             else
@@ -363,6 +373,7 @@ install_deps() {
                 echo "waiting"
                 sleep 1
             done
+            switch_to_vault_repo
             yum -y install  gcc-c++ devtoolset-8-gcc-c++ devtoolset-8-binutils
             source /opt/rh/devtoolset-8/enable
             yum -y install scons check-devel boost-devel cmake3
@@ -378,11 +389,12 @@ install_deps() {
 --slave /usr/local/bin/ccmake ccmake /usr/bin/ccmake3 \
 --family cmake
         fi
-        if [ "x${RHEL}" = "x8" ]; then
-            yum -y install centos-release-stream
-            yum -y install git gcc-toolset-11-gcc gcc-toolset-11-gcc-c++ gcc-toolset-11-annobin-plugin-gcc
-            source /opt/rh/gcc-toolset-11/enable
-        fi
+        #if [ "x${RHEL}" = "x8" ]; then
+        #    yum -y install centos-release-stream
+        #    switch_to_vault_repo
+        #    yum -y install git gcc-toolset-11-gcc gcc-toolset-11-gcc-c++ gcc-toolset-11-annobin-plugin-gcc gcc-toolset-11-libatomic-devel
+        #    source /opt/rh/gcc-toolset-11/enable
+        #fi
         if [ "x${RHEL}" = "x7" ]; then
             yum -y install devtoolset-11
             source /opt/rh/devtoolset-11/enable
@@ -406,32 +418,44 @@ install_deps() {
         fi
         if [ "x$RHEL" = "x8" ]; then
             yum -y install centos-release-stream
-            yum -y install gcc-toolset-11-gcc-c++ gcc-toolset-11-binutils
-            yum -y install gcc-toolset-11-valgrind gcc-toolset-11-valgrind-devel gcc-toolset-11-libatomic-devel
+            switch_to_vault_repo
+            yum -y install git gcc-toolset-11-gcc-c++ gcc-toolset-11-binutils gcc-toolset-11-annobin-plugin-gcc
+            yum -y install gcc-toolset-11-valgrind gcc-toolset-11-valgrind-devel gcc-toolset-11-libatomic-devel gcc-toolset-11-libatomic-devel
             yum -y install gcc-toolset-11-libasan-devel gcc-toolset-11-libubsan-devel
+            source /opt/rh/gcc-toolset-11/enable
             yum -y remove centos-release-stream
         fi
         yum -y install yum-utils patchelf
         yum -y install cyrus-sasl-devel cyrus-sasl-scram krb5-devel
     else
         apt-get -y update
-        DEBIAN_FRONTEND=noninteractive apt-get -y install curl lsb-release wget apt-transport-https software-properties-common
+        DEBIAN_FRONTEND=noninteractive apt-get -y install curl lsb-release gnupg2 wget apt-transport-https software-properties-common
         apt-get -y install dirmngr || true
         apt-get update
         apt-get -y install dirmngr || true
         wget https://repo.percona.com/apt/percona-release_latest.$(lsb_release -sc)_all.deb && dpkg -i percona-release_latest.$(lsb_release -sc)_all.deb
+        export DEBIAN_FRONTEND="noninteractive"
+        export DIST="$(lsb_release -sc)"
         percona-release enable tools release
         
         # (1) PXB compatible with previous PXC LTS version
-        percona-release enable pxb-80 testing
+	if [ x"$ARCH" = "xx86_64" ]; then
+            percona-release enable pxb-80 release
+	else
+	    percona-release enable pxb-80 testing
+	fi
+        if [ x"${DIST}" = xnoble ]; then
+            percona-release enable pxb-8x-innovation experimental
+        else
+            percona-release enable pxb-8x-innovation release
+        fi
+        percona-release enable pxb-84-lts testing
         # (2) PXB compatible with previous PXC version (note: it may be LTS as well)
         percona-release enable pxc-8x-innovation testing
         # (3) PXB compatible with this PXC version (LTS or Innovative)
-        percona-release enable pxc-8x-innovation testing
+        percona-release enable pxc-84-lts testing
         
-        export DEBIAN_FRONTEND="noninteractive"
-        export DIST="$(lsb_release -sc)"
-            until apt-get update; do
+        until apt-get update; do
             sleep 1
             echo "waiting"
         done
@@ -488,10 +512,8 @@ install_deps() {
         apt-get -y install libtool libnuma-dev scons libboost-dev libboost-program-options-dev check
         apt-get -y install doxygen doxygen-gui graphviz rsync libcurl4-openssl-dev
         apt-get -y install libcurl4-openssl-dev libre2-dev pkg-config libtirpc-dev libev-dev
-        apt-get -y install --download-only percona-xtrabackup-80=8.0.35-30-1.${DIST}
-        apt-get -y install --download-only percona-xtrabackup-81=8.1.0-1-1.${DIST}
-        apt-get -y install --download-only percona-xtrabackup-82=8.2.0-1-1.${DIST}
-        apt-get -y install --download-only percona-xtrabackup-83=8.3.0-1-1.${DIST}
+        apt-get -y install --download-only percona-xtrabackup-80=8.0.35-31-1.${DIST}
+        apt-get -y install --download-only percona-xtrabackup-84=8.4.0-1-1.${DIST}
     fi
     return;
 }
@@ -634,6 +656,7 @@ build_srpm(){
 }
 
 build_mecab_lib(){
+    ARCH=$(echo $(uname -m) | sed -e 's:i686:i386:g')
     MECAB_TARBAL="mecab-0.996.tar.gz"
     MECAB_LINK="https://downloads.percona.com/downloads/packaging/mecab/${MECAB_TARBAL}"
     MECAB_DIR="${WORKDIR}/${MECAB_TARBAL%.tar.gz}"
@@ -644,6 +667,12 @@ build_mecab_lib(){
     mkdir ${MECAB_INSTALL_DIR}
     wget ${MECAB_LINK}
     tar xf ${MECAB_TARBAL}
+    if [ x"$ARCH" = "xaarch64" ]; then
+        git clone git://git.savannah.gnu.org/config.git
+        unalias cp
+        cp config/config.guess ${MECAB_DIR}
+        cp config/config.sub ${MECAB_DIR}
+    fi
     cd ${MECAB_DIR} || exit
     ./configure --with-pic --prefix=/usr
     make
@@ -876,18 +905,12 @@ build_deb(){
 
     # (1) PXB compatible with previous PXC LTS version
     mkdir -p pxb-8.0
-    # (2) PXB compatible with previous PXC version (note: it may be LTS as well)
-    mkdir -p pxb-8.1
-    # (3) PXB compatible with this PXC version (LTS or Innovative)
-    mkdir -p pxb-8.2
-    # (3) PXB compatible with this PXC version (LTS or Innovative)
-    mkdir -p pxb-8.3
+    # (2) PXB compatible with this PXC version (LTS or Innovative)
+    mkdir -p pxb-8.4
 
 
     dpkg-deb -R /var/cache/apt/archives/percona-xtrabackup-80* pxb-8.0
-    dpkg-deb -R /var/cache/apt/archives/percona-xtrabackup-81* pxb-8.1
-    dpkg-deb -R /var/cache/apt/archives/percona-xtrabackup-82* pxb-8.2
-    dpkg-deb -R /var/cache/apt/archives/percona-xtrabackup-83* pxb-8.3
+    dpkg-deb -R /var/cache/apt/archives/percona-xtrabackup-84* pxb-8.4
 
     #  (1)
     cd pxb-8.0 || exit
@@ -896,19 +919,7 @@ build_deb(){
         rm -rf usr *.deb DEBIAN
 
     # (2)
-    cd ../pxb-8.1 || exit
-        mv usr/bin ./
-        mv usr/lib* ./
-        rm -rf usr *.deb DEBIAN
-
-    # (3)
-    cd ../pxb-8.2 || exit
-        mv usr/bin ./
-        mv usr/lib* ./
-        rm -rf usr *.deb DEBIAN
-
-    # (4)
-    cd ../pxb-8.3 || exit
+    cd ../pxb-8.4 || exit
         mv usr/bin ./
         mv usr/lib* ./
         rm -rf usr *.deb DEBIAN
@@ -940,6 +951,8 @@ build_deb(){
         cat call-home.sh >> percona-xtradb-cluster-server.postinst 
         echo "CALLHOME" >> percona-xtradb-cluster-server.postinst
         echo "bash +x /tmp/call-home.sh -f \"PRODUCT_FAMILY_PXC\" -v \"${MYSQL_VERSION}-${MYSQL_RELEASE}-${DEB_RELEASE}\" -d \"PACKAGE\" &>/dev/null || :" >> percona-xtradb-cluster-server.postinst
+	echo "chgrp percona-telemetry /usr/local/percona/telemetry_uuid &>/dev/null || :" >> percona-xtradb-cluster-server.postinst
+        echo "chmod 664 /usr/local/percona/telemetry_uuid &>/dev/null || :" >> percona-xtradb-cluster-server.postinst
         echo "rm -rf /tmp/call-home.sh" >> percona-xtradb-cluster-server.postinst
         echo "exit 0" >> percona-xtradb-cluster-server.postinst
         rm -f call-home.sh
@@ -1039,38 +1052,9 @@ build_tarball(){
         popd
 
         # (2)
-        mkdir pxb-8.1
-        pushd pxb-8.1
-        yumdownloader percona-xtrabackup-81-8.1.0
-        rpm2cpio *.rpm | cpio --extract --make-directories --verbose
-        mv usr/bin ./
-        mv usr/lib64 ./
-        mv lib64 lib
-        mv usr/lib/private lib/
-        mv lib/xtrabackup/* lib/
-        rm -rf lib/xtrabackup
-        rm -rf usr
-        rm -f *.rpm
-        popd
-
-        # (3)
-        mkdir pxb-8.2
-        pushd pxb-8.2
-        yumdownloader percona-xtrabackup-82-8.2.0
-        rpm2cpio *.rpm | cpio --extract --make-directories --verbose
-        mv usr/bin ./
-        mv usr/lib* ./
-        mv lib64 lib
-        mv lib/xtrabackup/* lib/ || true
-        rm -rf lib/xtrabackup
-        rm -rf usr
-        rm -f *.rpm
-        popd
-
-        # (4)
-        mkdir pxb-8.3
-        pushd pxb-8.3
-        yumdownloader percona-xtrabackup-83-8.3.0
+        mkdir pxb-8.4
+        pushd pxb-8.4
+        yumdownloader percona-xtrabackup-84-8.4.0
         rpm2cpio *.rpm | cpio --extract --make-directories --verbose
         mv usr/bin ./
         mv usr/lib* ./
@@ -1082,18 +1066,12 @@ build_tarball(){
         popd
 
         tar -zcvf  percona-xtrabackup-8.0.tar.gz pxb-8.0
-        tar -zcvf  percona-xtrabackup-8.1.tar.gz pxb-8.1
-        tar -zcvf  percona-xtrabackup-8.2.tar.gz pxb-8.2
-        tar -zcvf  percona-xtrabackup-8.3.tar.gz pxb-8.3
+        tar -zcvf  percona-xtrabackup-8.4.tar.gz pxb-8.4
     else
         mkdir pxb-8.0
-        mkdir pxb-8.1
-        mkdir pxb-8.2
-        mkdir pxb-8.3
+        mkdir pxb-8.4
         dpkg-deb -R /var/cache/apt/archives/percona-xtrabackup-80* pxb-8.0
-        dpkg-deb -R /var/cache/apt/archives/percona-xtrabackup-81* pxb-8.1
-        dpkg-deb -R /var/cache/apt/archives/percona-xtrabackup-82* pxb-8.2
-        dpkg-deb -R /var/cache/apt/archives/percona-xtrabackup-83* pxb-8.3
+        dpkg-deb -R /var/cache/apt/archives/percona-xtrabackup-84* pxb-8.4
         
         # (1)
         pushd pxb-8.0
@@ -1103,35 +1081,19 @@ build_tarball(){
         popd
 
         # (2)
-        pushd pxb-8.1
-            mv usr/bin ./
-            mv usr/lib* ./
-            rm -rf usr *.deb DEBIAN
-        popd
-
-        # (3)
-        pushd pxb-8.2
-            mv usr/bin ./
-            mv usr/lib* ./
-            rm -rf usr *.deb DEBIAN
-        popd
-
-        # (4)
-        pushd pxb-8.3
+        pushd pxb-8.4
             mv usr/bin ./
             mv usr/lib* ./
             rm -rf usr *.deb DEBIAN
         popd
         
         tar -zcvf  percona-xtrabackup-8.0.tar.gz pxb-8.0
-        tar -zcvf  percona-xtrabackup-8.1.tar.gz pxb-8.1
-        tar -zcvf  percona-xtrabackup-8.2.tar.gz pxb-8.2
-        tar -zcvf  percona-xtrabackup-8.3.tar.gz pxb-8.3
+        tar -zcvf  percona-xtrabackup-8.4.tar.gz pxb-8.4
     fi
     mkdir -p ${BUILD_ROOT}/target/pxc_extra/
     cp *.tar.gz ${BUILD_ROOT}/target/pxc_extra/
     cp *.tar.gz ${BUILD_ROOT}/target
-    rm -rf pxb-8.0 pxb-8.1 pxb-8.2 pxb-8.3
+    rm -rf pxb-8.0 pxb-8.4
     cd ${CURDIR} || exit
     rm -rf jemalloc
     wget https://github.com/jemalloc/jemalloc/releases/download/$JVERSION/jemalloc-$JVERSION.tar.bz2
