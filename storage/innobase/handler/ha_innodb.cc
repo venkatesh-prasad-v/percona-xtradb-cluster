@@ -22228,7 +22228,6 @@ static xa_status_code innobase_commit_by_xid(
 #ifdef WITH_WSREP
       trx->wsrep_recover_xid = xid;
 #endif /* WITH_WSREP */
-
       innobase_commit_low(trx);
     }
     ut_ad(trx->mysql_thd == nullptr);
@@ -22237,7 +22236,7 @@ static xa_status_code innobase_commit_by_xid(
     ut_ad(!trx->will_lock); /* trx cache requirement */
 
 #ifdef WITH_WSREP
-    trx->wsrep_recover_xid = NULL;
+    trx->wsrep_recover_xid = nullptr;
 #endif /* WITH_WSREP */
 
     trx_free_for_background(trx);
