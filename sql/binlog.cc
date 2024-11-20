@@ -1919,7 +1919,6 @@ bool MYSQL_BIN_LOG::write_transaction(THD *thd, binlog_cache_data *cache_data,
                        static_cast<ulong>(gtid_event.get_event_length())));
   DBUG_PRINT("info", ("transaction_length= %llu", gtid_event.get_trx_length()));
 
-<<<<<<< HEAD
 #ifdef WITH_WSREP
   bool ret = 0;
 
@@ -1927,16 +1926,12 @@ bool MYSQL_BIN_LOG::write_transaction(THD *thd, binlog_cache_data *cache_data,
       !(thd->variables.option_bits & OPTION_BIN_LOG))
     goto end;
 
-  ret = gtid_event.write(writer);
+  ret = DBUG_EVALUATE_IF("simulate_write_trans_without_gtid", false,
+                              gtid_event.write(writer));
 #else
-  bool ret = gtid_event.write(writer);
-#endif
-||||||| merged common ancestors
-  bool ret = gtid_event.write(writer);
-=======
   bool ret = DBUG_EVALUATE_IF("simulate_write_trans_without_gtid", false,
                               gtid_event.write(writer));
->>>>>>> Percona-Server-8.4.2-2
+#endif
   if (ret) goto end;
 
   /*
@@ -3229,12 +3224,6 @@ int MYSQL_BIN_LOG::rollback(THD *thd, bool all) {
       (void)RUN_HOOK(transaction, after_commit, (thd, all));
   }
 
-<<<<<<< HEAD
-#ifdef WITH_WSREP
-  if (!WSREP_EMULATE_BINLOG(thd) && check_write_error(thd)) {
-#else
-||||||| merged common ancestors
-=======
   /*
     It should be impossible to have an incident here as all sessions with
     incident will call ordered_commit() and handle the incident during
@@ -3242,7 +3231,9 @@ int MYSQL_BIN_LOG::rollback(THD *thd, bool all) {
    */
   assert(!cache_mngr->has_incident());
 
->>>>>>> Percona-Server-8.4.2-2
+#ifdef WITH_WSREP
+  if (!WSREP_EMULATE_BINLOG(thd) && check_write_error(thd)) {
+#else
   if (check_write_error(thd)) {
 #endif /* WITH_WSREP */
     /*
@@ -10063,13 +10054,7 @@ bool THD::is_binlog_cache_empty(bool is_transactional) const {
 #ifdef WITH_WSREP
 #else
   assert(opt_bin_log);
-<<<<<<< HEAD
 #endif /* WITH_WSREP */
-  binlog_cache_mngr *cache_mngr = thd_get_cache_mngr(this);
-||||||| merged common ancestors
-  binlog_cache_mngr *cache_mngr = thd_get_cache_mngr(this);
-=======
->>>>>>> Percona-Server-8.4.2-2
 
   binlog_cache_mngr *const cache_mngr = thd_get_cache_mngr(this);
   if (cache_mngr == nullptr) {

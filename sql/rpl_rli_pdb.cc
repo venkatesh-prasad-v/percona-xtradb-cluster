@@ -2572,25 +2572,16 @@ int slave_worker_exec_job_group(Slave_worker *worker, Relay_log_info *rli) {
         diff_timespec(&worker->ts_exec[1], &worker->ts_exec[0]);
     if (error || worker->found_commit_order_deadlock()) {
       worker->prepare_for_retry(*ev);
-<<<<<<< HEAD
-      error = worker->retry_transaction(start_relay_number, start_relay_pos,
-                                        job_item->relay_number,
-                                        job_item->relay_pos);
+
+      error = worker->retry_transaction(
+          start_relay_pos, start_event_relay_log_name, job_item->relay_pos,
+          job_item->event_relay_log_name);
 #ifdef WITH_WSREP
       if (error) {
         wsrep_after_statement(thd);
         goto err;
       }
 #else
-||||||| merged common ancestors
-      error = worker->retry_transaction(start_relay_number, start_relay_pos,
-                                        job_item->relay_number,
-                                        job_item->relay_pos);
-=======
-      error = worker->retry_transaction(
-          start_relay_pos, start_event_relay_log_name, job_item->relay_pos,
-          job_item->event_relay_log_name);
->>>>>>> Percona-Server-8.4.2-2
       if (error) goto err;
 #endif /* WITH_WSREP */
     }
