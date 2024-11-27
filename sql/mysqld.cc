@@ -7875,7 +7875,9 @@ static int init_ssl() {
     LogErr(WARNING_LEVEL, ER_DEPRECATE_MSG_NO_REPLACEMENT, "--ssl-fips-mode");
 
   if (get_fips_mode() == 1) {
+#ifdef WITH_WSREP
     wsrep_enable_fips_mode();
+#endif
     LogErr(INFORMATION_LEVEL, ER_SSL_FIPS_MODE_ENABLED);
   }
 
