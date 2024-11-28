@@ -121,9 +121,13 @@ DataProvider::DataProvider(
       command_error_info_service_(command_error_info_service),
       command_thread_service_(command_thread_service),
       logger_(logger),
+#ifdef WITH_WSREP
       db_replication_id_solver_(std::make_shared<DbReplicationIdSolver>()),
       gcache_encryption_enabled_cache_(-1),
       ws_cache_encryption_enabled_cache_(-1) {}
+#else
+      db_replication_id_solver_(std::make_shared<DbReplicationIdSolver>()) {}
+#endif
 
 void DataProvider::thread_access_begin() { command_thread_service_.init(); }
 
