@@ -5878,6 +5878,9 @@ bool open_tables(THD *thd, Table_ref **start, uint *counter, uint flags,
   DBUG_TRACE;
   bool audit_notified = false;
 
+  // Property of having external tables is always set in this function:
+  thd->lex->reset_has_external_tables();
+
 restart:
   /*
     Close HANDLER tables which are marked for flush or against which there
@@ -6115,6 +6118,7 @@ restart:
       }
     }
 
+<<<<<<< HEAD
 #ifdef WITH_WSREP
     bool is_dml_stmt = (thd->lex->sql_command == SQLCOM_INSERT ||
                         thd->lex->sql_command == SQLCOM_INSERT_SELECT ||
@@ -6257,6 +6261,16 @@ restart:
     }
 #endif /* WITH_WSREP */
 
+||||||| 41ebc5d90f9
+=======
+    // Remember if an external table has been opened in this statement.
+    if (tbl != nullptr && tbl->s->has_secondary_engine() &&
+        ha_check_storage_engine_flag(tbl->s->db_type(),
+                                     HTON_SUPPORTS_EXTERNAL_SOURCE)) {
+      thd->lex->set_has_external_tables();
+    }
+
+>>>>>>> percona/ps/release-8.0.40-31
     /*
       Access to ACL table in a SELECT ... LOCK IN SHARE MODE are required
       to skip acquiring row locks. So, we use TL_READ_DEFAULT lock on ACL
