@@ -23,13 +23,6 @@ ERROR HY000: Lock wait timeout exceeded; try restarting transaction
 #
 # Unblock applier
 #
-<<<<<<< HEAD
-SET DEBUG_SYNC = 'now SIGNAL continue_purge_applied_logs_after_backup_lock';
-SET DEBUG_SYNC = RESET;
-||||||| 41ebc5d90f9
-SET DEBUG_SYNC = 'now SIGNAL continue_purge_applied_logs_after_backup_lock';
-=======
->>>>>>> percona/ps/release-8.0.40-31
 # Removing debug point 'syncpoint_purge_applied_logs_after_backup_lock' from @@GLOBAL.debug
 SET DEBUG_SYNC = 'now SIGNAL continue_purge_applied_logs_after_backup_lock';
 #

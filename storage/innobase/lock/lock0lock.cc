@@ -2074,29 +2074,14 @@ static dberr_t lock_rec_lock(bool impl, select_mode sel_mode, ulint mode,
                           Useful when reporting a deadlock cycle. (optional)
 @return The conflicting lock which is the reason wait_lock has to wait
 or nullptr if it can be granted now */
+
 static const lock_t *lock_rec_has_to_wait_in_queue(
 #ifdef WITH_WSREP
     const lock_t *wait_lock, bool validation_check,
     const trx_t *blocking_trx = nullptr) {
 #else
     const lock_t *wait_lock, const trx_t *blocking_trx = nullptr) {
-<<<<<<< HEAD
 #endif /* WITH_WSREP */
-  const lock_t *lock;
-  ulint heap_no;
-  ulint bit_mask;
-  ulint bit_offset;
-  hash_table_t *hash;
-
-||||||| 41ebc5d90f9
-  const lock_t *lock;
-  ulint heap_no;
-  ulint bit_mask;
-  ulint bit_offset;
-  hash_table_t *hash;
-
-=======
->>>>>>> percona/ps/release-8.0.40-31
   ut_ad(lock_get_type_low(wait_lock) == LOCK_REC);
   const auto page_id = wait_lock->rec_lock.page_id;
   ut_ad(locksys::owns_page_shard(page_id));
@@ -2105,6 +2090,7 @@ static const lock_t *lock_rec_has_to_wait_in_queue(
   const auto heap_no = (uint16_t)lock_rec_find_set_bit(wait_lock);
 
   locksys::Trx_locks_cache wait_lock_cache{};
+#if 0  // KH:
 <<<<<<< HEAD
   for (lock = lock_rec_get_first_on_page_addr(hash, page_id); lock != wait_lock;
        lock = lock_rec_get_next_on_page_const(lock)) {
@@ -2178,6 +2164,35 @@ static const lock_t *lock_rec_has_to_wait_in_queue(
       });
   return stopped_at == wait_lock ? nullptr : stopped_at;
 >>>>>>> percona/ps/release-8.0.40-31
+
+#else // KH:
+  lock_t *stopped_at = wait_lock->hash_table().find_on_record(
+      RecID{page_id, heap_no}, [&](lock_t *lock) {
+        if (lock == wait_lock) return true;
+
+        bool res = (/* lock == wait_lock || */
+               ((blocking_trx == nullptr || blocking_trx == lock->trx) &&
+                locksys::rec_lock_has_to_wait(wait_lock, lock,
+                                              wait_lock_cache)));
+      if (res) {
+        if (!validation_check &&
+            wsrep_thd_is_BF(wait_lock->trx->mysql_thd, false) &&
+            wsrep_thd_is_BF(lock->trx->mysql_thd, true)) {
+          if (wsrep_debug) {
+            ib::info() << "WSREP: waiting BF trx: " << wait_lock->trx->id;
+            lock_rec_print(stderr, wait_lock);
+            ib::info() << "WSREP: waiting for lock held by trx: "
+                      << lock->trx->id;
+            lock_rec_print(stderr, lock);
+          }
+          /* don't wait for another BF lock */
+          res = false;
+        }
+      }
+      return res;
+      });
+  return stopped_at == wait_lock ? nullptr : stopped_at;
+#endif // KH:
 }
 
 /** Grants a lock to a waiting lock request and releases the waiting

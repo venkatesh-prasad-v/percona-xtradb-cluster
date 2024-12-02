@@ -1041,16 +1041,6 @@ bool upgrade_system_schemas(THD *thd) {
 /* 1. We INSERT INTO, because prepared statements do not support
       INSTALL COMPONENT
    2. We use stored procedure to be able to do conditional action.
-<<<<<<< HEAD
-   3. Percona Telemetry Component creates and uses internal user
-      (locked account) percona.telemetry with the following privileges:
-        1. SELECT
-        2. REPLICATION SLAVE
-        3. REPLICATION CLIENT
-      CREATE USER and GRANT do not work yet as ACL is not initialized yet.
-      Use INSERT and UPDATES.
-||||||| 41ebc5d90f9
-=======
    3. Percona Telemetry Component creates and uses internal user
       (locked account) percona.telemetry with the following privileges:
         1. SELECT
@@ -1067,7 +1057,6 @@ bool upgrade_system_schemas(THD *thd) {
       2. We grant SELECT, REPLICATION SLAVE, REPLICATION CLIENT explicitly.
          It is for clarity, but also automatically fixes privileges in case
          someone manually drops them.
->>>>>>> percona/ps/release-8.0.40-31
 */
 static const char *percona_telemetry_install[] = {
     "USE mysql;\n",

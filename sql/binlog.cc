@@ -10066,7 +10066,11 @@ bool THD::binlog_configure_trx_cache_size(ulong new_size) {
   // Close and reopen with new value
   Binlog_cache_storage *const cache = cache_mngr->get_trx_cache();
   cache->close();
+#ifdef WITH_WSREP
+  return cache->open((my_off_t)new_size, max_binlog_cache_size);
+#else
   return cache->open(new_size, max_binlog_cache_size);
+#endif
 }
 
 /**
