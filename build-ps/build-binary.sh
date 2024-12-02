@@ -453,6 +453,10 @@ fi
         (make install) || exit 1
         (cp -v runtime_output_directory/mysqld-debug $TARGETDIR/usr/local/$PRODUCT_FULL_NAME/bin/mysqld) || true
         echo "mysqld in build in debug mode"
+        (
+            echo "Packaging the test files"
+            cp -R $SOURCEDIR/percona-xtradb-cluster-tests $TARGETDIR/usr/local/$PRODUCT_FULL_NAME/
+        ) || exit 1
     else
         cmake $SOURCEDIR/ ${CMAKE_OPTS:-} -DBUILD_CONFIG=mysql_release \
             -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:-RelWithDebInfo} \
@@ -491,11 +495,6 @@ fi
         (make install) || exit 1
         echo "mysqld in build in release mode"
     fi
-
-    (
-       echo "Packaging the test files"
-       cp -R $SOURCEDIR/percona-xtradb-cluster-tests $TARGETDIR/usr/local/$PRODUCT_FULL_NAME/
-    ) || exit 1
 
     # Build jemalloc
     if test "x$WITH_JEMALLOC" != x
