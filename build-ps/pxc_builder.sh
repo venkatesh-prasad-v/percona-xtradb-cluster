@@ -421,6 +421,9 @@ install_deps() {
             yum -y install gcc-toolset-11-libasan-devel gcc-toolset-11-libubsan-devel
             yum -y remove centos-release-stream
         fi
+        if [ "x$RHEL" = "x9" ]; then
+            yum -y install libatomic
+        fi
         yum -y install yum-utils patchelf
         yum -y install cyrus-sasl-devel cyrus-sasl-scram krb5-devel
     else

@@ -1041,6 +1041,13 @@ bool upgrade_system_schemas(THD *thd) {
 /* 1. We INSERT INTO, because prepared statements do not support
       INSTALL COMPONENT
    2. We use stored procedure to be able to do conditional action.
+   3. Percona Telemetry Component creates and uses internal user
+      (locked account) percona.telemetry with the following privileges:
+        1. SELECT
+        2. REPLICATION SLAVE
+        3. REPLICATION CLIENT
+      CREATE USER and GRANT do not work yet as ACL is not initialized yet.
+      Use INSERT and UPDATES.
 */
 static const char *percona_telemetry_install[] = {
     "USE mysql;\n",
@@ -1059,12 +1066,24 @@ static const char *percona_telemetry_install[] = {
     "PREPARE stmt FROM @str;\n",
     "EXECUTE stmt;\n",
     "DROP PREPARE stmt;\n",
+    "INSERT IGNORE INTO mysql.user VALUES "
+    "('localhost','percona.telemetry','N','N','N','N','N','N','"
+    "N','N','N','N','N','N','N','N','N','N','N','N','N','N','N','N','N','N','N'"
+    ",'N','N','N','N','','','','',0,0,0,0,'caching_sha2_password','$A$005$"
+    "THISISACOMBINATIONOFINVALIDSALTANDPASSWORDTHATMUSTNEVERBRBEUSED','N',"
+    "CURRENT_TIMESTAMP,NULL,'Y', 'N', 'N', NULL, NULL, NULL, NULL);\n",
+    "UPDATE mysql.user SET Select_priv = 'Y', Repl_slave_priv = 'Y', "
+    "Repl_client_priv = 'Y' WHERE User = 'percona.telemetry' AND Host = 'localhost';\n",
+    "UPDATE mysql.user SET Shutdown_priv = 'N', Super_priv = 'N', "
+    "Create_role_priv = 'N', Drop_role_priv = 'N' WHERE User = "
+    "'percona.telemetry' AND Host = 'localhost';\n",
     NULL};
 
 static const char *percona_telemetry_uninstall[] = {
     "USE mysql;\n",
     "DELETE FROM mysql.component WHERE "
     "component_urn=\"file://component_percona_telemetry\"\n;",
+    "DELETE FROM mysql.user WHERE user='percona.telemetry' AND Host = 'localhost';\n",
     NULL};
 
 /**
