@@ -6584,6 +6584,13 @@ void os_fusionio_get_sector_size() {
     alignment. */
     alignas(MAX_SECTOR_SIZE) byte data[MAX_SECTOR_SIZE] = {0};
 
+#ifdef WITH_WSREP
+#ifdef USE_VALGRIND
+    // For Valgrind to not complain about unititialized buffer usage
+    memset(data, 0, MAX_SECTOR_SIZE);
+#endif
+#endif /* WITH_WSREP */
+
     while (sector_size <= MAX_SECTOR_SIZE) {
       block_ptr = static_cast<byte *>(ut_align(&data, sector_size));
       ret = pwrite(check_file, block_ptr, sector_size, 0);

@@ -12399,7 +12399,8 @@ int prepend_binlog_control_event(THD *const thd) {
     return ER_ERROR_ON_WRITE;
 
   int ret = 0;
-  Intvar_log_event ev((uchar)binary_log::Intvar_event::BINLOG_CONTROL_EVENT, 0);
+  Intvar_log_event ev(thd,
+                      (uchar)binary_log::Intvar_event::BINLOG_CONTROL_EVENT, 0);
   if (ev.write(&tmp_io_cache)) {
     ret = ER_ERROR_ON_WRITE;
     goto cleanup;
