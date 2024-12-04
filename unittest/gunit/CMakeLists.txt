@@ -311,6 +311,7 @@ SET(SERVER_TESTS
   ha_info_iterator
   xid_extract
   log_event_status_size
+  md5
 )
 # Endless loop in FatalSignalDeathTest
 IF(LINUX_ALPINE)
