@@ -91,11 +91,11 @@ class DataProvider {
 
 #ifdef WITH_WSREP
   bool collect_galera_replication_info(rapidjson::Document *document);
+  bool get_gcache_encryption_enabled(const std::string &options);
+  bool get_ws_cache_encryption_enabled(const std::string &options);
 #endif
 
   const std::string &get_database_instance_id();
-  bool get_gcache_encryption_enabled(const std::string &options);
-  bool get_ws_cache_encryption_enabled(const std::string &options);
 
   SERVICE_TYPE(mysql_command_factory) & command_factory_service_;
   SERVICE_TYPE(mysql_command_options) & command_options_service_;
@@ -110,8 +110,10 @@ class DataProvider {
 
   std::string database_instance_id_cache_;
   std::string version_cache_;
+#ifdef WITH_WSREP
   int gcache_encryption_enabled_cache_;
   int ws_cache_encryption_enabled_cache_;
+#endif
 };
 
 #endif /* PERCONA_TELEMETRY_DATA_PROVIDER_H */

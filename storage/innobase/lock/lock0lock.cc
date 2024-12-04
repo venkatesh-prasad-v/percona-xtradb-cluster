@@ -1580,6 +1580,7 @@ void RecLock::set_wait_state(lock_t *lock) {
   ut_a(stopped);
 }
 
+#ifdef WITH_WSREP
 /**
 Enqueue a lock wait for normal transaction. If it is a high priority transaction
 then jump the record lock wait queue and if the transaction at the head of the
@@ -1592,6 +1593,7 @@ queue is itself waiting roll it back, also do a deadlock check and resolve.
         there was a deadlock, but another transaction was chosen
         as a victim, and we got the lock immediately: no need to
         wait then */
+#endif
 dberr_t RecLock::add_to_waitq(const lock_t *wait_for, const lock_prdt_t *prdt) {
   ut_ad(locksys::owns_page_shard(m_rec_id.get_page_id()));
   ut_ad(m_trx == thr_get_trx(m_thr));
@@ -2090,88 +2092,35 @@ static const lock_t *lock_rec_has_to_wait_in_queue(
   const auto heap_no = (uint16_t)lock_rec_find_set_bit(wait_lock);
 
   locksys::Trx_locks_cache wait_lock_cache{};
-#if 0  // KH:
-<<<<<<< HEAD
-  for (lock = lock_rec_get_first_on_page_addr(hash, page_id); lock != wait_lock;
-       lock = lock_rec_get_next_on_page_const(lock)) {
-    const byte *p = (const byte *)&lock[1];
 
-    if ((blocking_trx == nullptr || blocking_trx == lock->trx) &&
-        heap_no < lock_rec_get_n_bits(lock) && (p[bit_offset] & bit_mask) &&
-        locksys::rec_lock_has_to_wait(wait_lock, lock, wait_lock_cache)) {
 #ifdef WITH_WSREP
-      /* As per parallel applying algorithm of the wsrep slave threads
-      locks are not considered conflicting and so if requesting and waiting
-      threads both are applier/slave threads then modified check for wsrep
-      return NULL that will allow requesting thread to be obtain the
-      needed lock. For detailed comments check the git-commit:#0b256a223924.
+  /* As per parallel applying algorithm of the wsrep slave threads
+  locks are not considered conflicting and so if requesting and waiting
+  threads both are applier/slave threads then modified check for wsrep
+  return NULL that will allow requesting thread to be obtain the
+  needed lock. For detailed comments check the git-commit:#0b256a223924.
 
-      Said check is also used to validate if the requesting lock that is added
-      to wait queue has a real waiting lock.
-      Scenario highlighted in galera_FK_duplicate_client_insert causes original
-      update on parent table to get bf-aborted due to insert on child table
-      originating from other cluster node. This insert takes S-lock on parent.
-      Aborted insert can get replayed that works as slave thread action
-      and try to add X-lock but needs to enter wait queue given presence of
-      the existing S-lock. Post add, flow validate if the record has conflicting
-      lock. In theory validation should pass as there is S-lock that is blocking
-      X-lock but given special handling wsrep flow function returns NULL
-      that indicate there is no conflicting lock. Caller asserts on this
-      condition as it just detected presence of conflicting lock and so added
-      its own lock to wait-q.
-      Said special flow make sense when the said function is being used to
-      detect presence of conflicting lock and proceed with lock_grant. */
-      if (!validation_check &&
-          wsrep_thd_is_BF(wait_lock->trx->mysql_thd, false) &&
-          wsrep_thd_is_BF(lock->trx->mysql_thd, true)) {
-        if (wsrep_debug) {
-          ib::info() << "WSREP: waiting BF trx: " << wait_lock->trx->id;
-          lock_rec_print(stderr, wait_lock);
-          ib::info() << "WSREP: waiting for lock held by trx: "
-                     << lock->trx->id;
-          lock_rec_print(stderr, lock);
-        }
-        /* don't wait for another BF lock */
-        continue;
-      }
-#endif /* WITH_WSREP */
+  Said check is also used to validate if the requesting lock that is added
+  to wait queue has a real waiting lock.
+  Scenario highlighted in galera_FK_duplicate_client_insert causes original
+  update on parent table to get bf-aborted due to insert on child table
+  originating from other cluster node. This insert takes S-lock on parent.
+  Aborted insert can get replayed that works as slave thread action
+  and try to add X-lock but needs to enter wait queue given presence of
+  the existing S-lock. Post add, flow validate if the record has conflicting
+  lock. In theory validation should pass as there is S-lock that is blocking
+  X-lock but given special handling wsrep flow function returns NULL
+  that indicate there is no conflicting lock. Caller asserts on this
+  condition as it just detected presence of conflicting lock and so added
+  its own lock to wait-q.
+  Said special flow make sense when the said function is being used to
+  detect presence of conflicting lock and proceed with lock_grant. */
 
-      return (lock);
-    }
-  }
-
-  return (nullptr);
-||||||| 41ebc5d90f9
-  for (lock = lock_rec_get_first_on_page_addr(hash, page_id); lock != wait_lock;
-       lock = lock_rec_get_next_on_page_const(lock)) {
-    const byte *p = (const byte *)&lock[1];
-
-    if ((blocking_trx == nullptr || blocking_trx == lock->trx) &&
-        heap_no < lock_rec_get_n_bits(lock) && (p[bit_offset] & bit_mask) &&
-        locksys::rec_lock_has_to_wait(wait_lock, lock, wait_lock_cache)) {
-      return (lock);
-    }
-  }
-
-  return (nullptr);
-=======
-  lock_t *stopped_at = wait_lock->hash_table().find_on_record(
-      RecID{page_id, heap_no}, [&](lock_t *lock) {
-        return lock == wait_lock ||
-               ((blocking_trx == nullptr || blocking_trx == lock->trx) &&
-                locksys::rec_lock_has_to_wait(wait_lock, lock,
-                                              wait_lock_cache));
-      });
-  return stopped_at == wait_lock ? nullptr : stopped_at;
->>>>>>> percona/ps/release-8.0.40-31
-
-#else // KH:
   lock_t *stopped_at = wait_lock->hash_table().find_on_record(
       RecID{page_id, heap_no}, [&](lock_t *lock) {
         if (lock == wait_lock) return true;
 
-        bool res = (/* lock == wait_lock || */
-               ((blocking_trx == nullptr || blocking_trx == lock->trx) &&
+        bool res = (((blocking_trx == nullptr || blocking_trx == lock->trx) &&
                 locksys::rec_lock_has_to_wait(wait_lock, lock,
                                               wait_lock_cache)));
       if (res) {
@@ -2191,8 +2140,16 @@ static const lock_t *lock_rec_has_to_wait_in_queue(
       }
       return res;
       });
+#else
+  lock_t *stopped_at = wait_lock->hash_table().find_on_record(
+      RecID{page_id, heap_no}, [&](lock_t *lock) {
+        return lock == wait_lock ||
+               ((blocking_trx == nullptr || blocking_trx == lock->trx) &&
+                locksys::rec_lock_has_to_wait(wait_lock, lock,
+                                              wait_lock_cache));
+      });
+#endif
   return stopped_at == wait_lock ? nullptr : stopped_at;
-#endif // KH:
 }
 
 /** Grants a lock to a waiting lock request and releases the waiting
@@ -3789,7 +3746,6 @@ static inline void lock_table_remove_low(
 
 /** Enqueues a waiting request for a table lock which cannot be granted
  immediately. Checks for deadlocks.
- @param[in] c_lock         conflicting lock
  @param[in] mode           lock mode this transaction is requesting
  @param[in] table          the table to be locked
  @param[in] thr            the query thread requesting the lock
