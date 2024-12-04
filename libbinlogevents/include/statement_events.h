@@ -672,7 +672,7 @@ class Query_event : public Binary_log_event {
 
   uint8_t default_table_encryption;
 
-// #ifdef WITH_WSREP
+  // #ifdef WITH_WSREP
   /**
     This class is used by server and mysqldump.
     The server is compiled with WITH_WSREP defined, but mysqldump is not.

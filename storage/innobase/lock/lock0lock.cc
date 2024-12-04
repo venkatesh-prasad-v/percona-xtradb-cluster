@@ -2120,23 +2120,23 @@ static const lock_t *lock_rec_has_to_wait_in_queue(
       RecID{page_id, heap_no}, [&](lock_t *lock) {
         if (lock == wait_lock) return true;
 
-        bool res = (((blocking_trx == nullptr || blocking_trx == lock->trx) &&
-                locksys::rec_lock_has_to_wait(wait_lock, lock,
-                                              wait_lock_cache)));
-      if (res) {
-        if (!validation_check &&
-            wsrep_thd_is_BF(wait_lock->trx->mysql_thd, false) &&
-            wsrep_thd_is_BF(lock->trx->mysql_thd, true)) {
-          if (wsrep_debug) {
-            ib::info() << "WSREP: waiting BF trx: " << wait_lock->trx->id;
-            lock_rec_print(stderr, wait_lock);
-            ib::info() << "WSREP: waiting for lock held by trx: "
-                      << lock->trx->id;
-            lock_rec_print(stderr, lock);
+        bool res =
+            (((blocking_trx == nullptr || blocking_trx == lock->trx) &&
+              locksys::rec_lock_has_to_wait(wait_lock, lock, wait_lock_cache)));
+        if (res) {
+          if (!validation_check &&
+              wsrep_thd_is_BF(wait_lock->trx->mysql_thd, false) &&
+              wsrep_thd_is_BF(lock->trx->mysql_thd, true)) {
+            if (wsrep_debug) {
+              ib::info() << "WSREP: waiting BF trx: " << wait_lock->trx->id;
+              lock_rec_print(stderr, wait_lock);
+              ib::info() << "WSREP: waiting for lock held by trx: "
+                         << lock->trx->id;
+              lock_rec_print(stderr, lock);
+            }
+            /* don't wait for another BF lock */
+            res = false;
           }
-          /* don't wait for another BF lock */
-          res = false;
-        }
       }
       return res;
       });

@@ -127,7 +127,8 @@ DataProvider::DataProvider(
 #ifdef WITH_WSREP
       db_replication_id_solver_(std::make_shared<DbReplicationIdSolver>()),
       gcache_encryption_enabled_cache_(-1),
-      ws_cache_encryption_enabled_cache_(-1) {}
+      ws_cache_encryption_enabled_cache_(-1) {
+}
 #else
       db_replication_id_solver_(std::make_shared<DbReplicationIdSolver>()) {}
 #endif

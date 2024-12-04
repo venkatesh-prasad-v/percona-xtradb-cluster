@@ -7439,10 +7439,10 @@ static int init_server_components() {
   if (ha_init_errors()) return 1;
 
 #ifdef WITH_WSREP
-  /* Leave the original location if wsrep is not involved otherwise
-  we do this before initializing WSREP as wsrep needs access to
-  gtid_mode which and for accessing gtid_mode gtid_sid_locks has to be
-  initialized which is done by this function. */
+    /* Leave the original location if wsrep is not involved otherwise
+    we do this before initializing WSREP as wsrep needs access to
+    gtid_mode which and for accessing gtid_mode gtid_sid_locks has to be
+    initialized which is done by this function. */
 #else
   if (gtid_server_init()) {
     LogErr(ERROR_LEVEL, ER_CANT_INITIALIZE_GTID);
@@ -8075,7 +8075,7 @@ static int init_server_components() {
       if (binlog_space_limit) mysql_bin_log.purge_logs_by_size(true);
     } else {
 #else
-  if (!opt_bin_log) {
+    if (!opt_bin_log) {
 #endif
       if (binlog_expire_logs_seconds_supplied)
         LogErr(WARNING_LEVEL, ER_NEED_LOG_BIN, "--binlog-expire-logs-seconds");
