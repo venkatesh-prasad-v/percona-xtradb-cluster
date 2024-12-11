@@ -42,8 +42,8 @@
 #include <map>
 #include <set>
 #include <string>
+#include <string_view>
 
-#include "lex_string.h"
 #include "my_aes.h"
 #include "m_string.h"     // native_strncasecmp
 #include "my_bitmap.h"    // MY_BITMAP
@@ -1620,10 +1620,12 @@ class Intvar_log_event : public mysql::binlog::event::Intvar_event,
     common_header->set_is_valid(true);
   }
 #ifdef WITH_WSREP
-  Intvar_log_event(uchar type_arg, ulonglong val_arg)
-      : binary_log::Intvar_event(type_arg, val_arg),
+  Intvar_log_event(THD *thd_arg, uchar type_arg, ulonglong val_arg)
+      : mysql::binlog::event::Intvar_event(type_arg, val_arg),
         Log_event(header(), footer()) {
     common_header->set_is_valid(true);
+    server_id = thd_arg->server_id;
+    common_header->unmasked_server_id = server_id;
   }
 #endif /* WITH_WSREP */
   int pack_info(Protocol *protocol) override;
@@ -3615,20 +3617,8 @@ class Incident_log_event : public mysql::binlog::event::Incident_event,
   Incident_log_event &operator=(const Incident_log_event &) = delete;
 
 #ifdef MYSQL_SERVER
-  Incident_log_event(THD *thd_arg, enum_incident incident_arg)
-      : mysql::binlog::event::Incident_event(incident_arg),
-        Log_event(thd_arg, LOG_EVENT_NO_FILTER_F, Log_event::EVENT_NO_CACHE,
-                  Log_event::EVENT_IMMEDIATE_LOGGING, header(), footer()) {
-    DBUG_TRACE;
-    DBUG_PRINT("enter", ("incident: %d", incident_arg));
-    common_header->set_is_valid(incident_arg > INCIDENT_NONE &&
-                                incident_arg < INCIDENT_COUNT);
-    assert(message == nullptr && message_length == 0);
-    return;
-  }
-
   Incident_log_event(THD *thd_arg, enum_incident incident_arg,
-                     LEX_CSTRING const msg)
+                     std::string_view msg)
       : mysql::binlog::event::Incident_event(incident_arg),
         Log_event(thd_arg, LOG_EVENT_NO_FILTER_F, Log_event::EVENT_NO_CACHE,
                   Log_event::EVENT_IMMEDIATE_LOGGING, header(), footer()) {
@@ -3638,13 +3628,13 @@ class Incident_log_event : public mysql::binlog::event::Incident_event,
                                 incident_arg < INCIDENT_COUNT);
     assert(message == nullptr && message_length == 0);
     if (!(message = (char *)my_malloc(key_memory_Incident_log_event_message,
-                                      msg.length + 1, MYF(MY_WME)))) {
+                                      msg.length() + 1, MYF(MY_WME)))) {
       // The allocation failed. Mark this binlog event as invalid.
       common_header->set_is_valid(false);
       return;
     }
-    strmake(message, msg.str, msg.length);
-    message_length = msg.length;
+    strmake(message, msg.data(), msg.length());
+    message_length = msg.length();
     return;
   }
 #endif

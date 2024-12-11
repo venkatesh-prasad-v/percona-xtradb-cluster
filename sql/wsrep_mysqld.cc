@@ -1933,8 +1933,9 @@ int wsrep_to_buf_helper(THD *thd, const char *query, uint query_len,
   }
 
   if ((thd->variables.option_bits & OPTION_BIN_LOG) == 0) {
-    Intvar_log_event ev((uchar)binary_log::Intvar_event::BINLOG_CONTROL_EVENT,
-                        0);
+    Intvar_log_event ev(
+        thd, (uchar)mysql::binlog::event::Intvar_event::BINLOG_CONTROL_EVENT,
+        0);
     if (ev.write(&tmp_io_cache)) ret = 1;
   }
 
