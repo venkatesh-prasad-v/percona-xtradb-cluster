@@ -216,9 +216,8 @@ BEGIN
   -- Also (in similar fashion as above) exclude all 'Daemon' threads, they will
   -- not give consistent result either.
   --
-<<<<<<< HEAD
   -- SELECT /*+SET_VAR(use_secondary_engine=OFF)*/ USER, HOST, DB, COMMAND, INFO FROM INFORMATION_SCHEMA.PROCESSLIST
-  --  WHERE COMMAND NOT IN ('Sleep', 'Daemon')
+  --  WHERE COMMAND NOT IN ('Sleep', 'Daemon', 'Killed')
   --    AND USER NOT IN ('unauthenticated user','mysql.session', 'event_scheduler')
   --      ORDER BY COMMAND;
 
@@ -262,17 +261,6 @@ BEGIN
     max_user_connections, plugin, authentication_string, password_expired, password_lifetime, account_locked, Create_role_priv,
     Drop_role_priv, Password_reuse_history, Password_reuse_time, Password_require_current, User_attributes 
   FROM mysql.user ORDER BY Host, User;
-||||||| d5292ef1219
-  SELECT /*+SET_VAR(use_secondary_engine=OFF)*/ USER, HOST, DB, COMMAND, INFO FROM INFORMATION_SCHEMA.PROCESSLIST
-    WHERE COMMAND NOT IN ('Sleep', 'Daemon')
-      AND USER NOT IN ('unauthenticated user','mysql.session', 'event_scheduler')
-        ORDER BY COMMAND;
-=======
-  SELECT /*+SET_VAR(use_secondary_engine=OFF)*/ USER, HOST, DB, COMMAND, INFO FROM INFORMATION_SCHEMA.PROCESSLIST
-    WHERE COMMAND NOT IN ('Sleep', 'Daemon', 'Killed')
-      AND USER NOT IN ('unauthenticated user','mysql.session', 'event_scheduler')
-        ORDER BY COMMAND;
->>>>>>> percona/ps/release-8.4.3-3
 
   -- During the installation of Percona Telemetry Component we create 'percona.telemetry'.
   -- It happens during the server startup, so servers started during the test will have the same user

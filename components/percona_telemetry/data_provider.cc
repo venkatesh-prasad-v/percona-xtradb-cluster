@@ -149,18 +149,6 @@ bool DataProvider::do_query(const std::string &query, QueryResult *result,
   }
   result->clear();
 
-<<<<<<< HEAD
-  /* command_factory_service_.init() allocates memory for mysql_h
-    We need to call close() always.
-    Even if init() fails, becaues it doesn't allocate anything, calling close()
-    is safe, because internally it checks if provided pointer is valid
-  */
-  std::shared_ptr<MYSQL_H> mysql_h_close_guard(
-      &mysql_h,
-      [&srv = command_factory_service_](MYSQL_H *ptr) { srv.close(*ptr); });
-
-||||||| d5292ef1219
-=======
   /* command_factory_service_.init() allocates memory for mysql_h
     We need to call close() always.
     Even if init() fails, becaues it doesn't allocate anything, calling close()
@@ -171,7 +159,6 @@ bool DataProvider::do_query(const std::string &query, QueryResult *result,
         srv.close(*ptr);
       });
 
->>>>>>> percona/ps/release-8.4.3-3
   mysql_service_status_t sstatus = command_factory_service_.init(&mysql_h);
 
   if (!sstatus)
