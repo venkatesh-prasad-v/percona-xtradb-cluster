@@ -194,27 +194,27 @@ drop user mysqltest_1@localhost;
 #
 SET NAMES koi8r;
 --character_set koi8r
-CREATE DATABASE О©╫О©╫;
-USE О©╫О©╫;
-CREATE TABLE О©╫О©╫О©╫ (О©╫О©╫О©╫ INT);
+CREATE DATABASE бд;
+USE бд;
+CREATE TABLE таб (кол INT);
 
-CREATE USER О©╫О©╫О©╫О©╫@localhost;
-GRANT SELECT ON О©╫О©╫.* TO О©╫О©╫О©╫О©╫@localhost;
-SHOW GRANTS FOR О©╫О©╫О©╫О©╫@localhost;
-REVOKE SELECT ON О©╫О©╫.* FROM О©╫О©╫О©╫О©╫@localhost;
+CREATE USER юзер@localhost;
+GRANT SELECT ON бд.* TO юзер@localhost;
+SHOW GRANTS FOR юзер@localhost;
+REVOKE SELECT ON бд.* FROM юзер@localhost;
 
-GRANT SELECT ON О©╫О©╫.О©╫О©╫О©╫ TO О©╫О©╫О©╫О©╫@localhost;
-SHOW GRANTS FOR О©╫О©╫О©╫О©╫@localhost;
-REVOKE SELECT ON О©╫О©╫.О©╫О©╫О©╫ FROM О©╫О©╫О©╫О©╫@localhost;
+GRANT SELECT ON бд.таб TO юзер@localhost;
+SHOW GRANTS FOR юзер@localhost;
+REVOKE SELECT ON бд.таб FROM юзер@localhost;
 
-GRANT SELECT (О©╫О©╫О©╫) ON О©╫О©╫.О©╫О©╫О©╫ TO О©╫О©╫О©╫О©╫@localhost;
-SHOW GRANTS FOR О©╫О©╫О©╫О©╫@localhost;
-REVOKE SELECT (О©╫О©╫О©╫) ON О©╫О©╫.О©╫О©╫О©╫ FROM О©╫О©╫О©╫О©╫@localhost;
+GRANT SELECT (кол) ON бд.таб TO юзер@localhost;
+SHOW GRANTS FOR юзер@localhost;
+REVOKE SELECT (кол) ON бд.таб FROM юзер@localhost;
 
 # Revoke does not drop user. Leave a clean user table for the next tests.
-DROP USER О©╫О©╫О©╫О©╫@localhost;
+DROP USER юзер@localhost;
 
-DROP DATABASE О©╫О©╫;
+DROP DATABASE бд;
 --character_set utf8mb4
 SET NAMES latin1;
 
@@ -508,15 +508,15 @@ set @user123="non-existent";
 select * from mysql.db where user=@user123;
 
 set names koi8r;
-create database О©╫О©╫;
-grant select on О©╫О©╫.* to root@localhost;
-select hex(Db) from mysql.db where Db='О©╫О©╫';
+create database бд;
+grant select on бд.* to root@localhost;
+select hex(Db) from mysql.db where Db='бд';
 --let $user = root@localhost
 --source include/show_grants.inc
 flush privileges;
 --source include/show_grants.inc
-drop database О©╫О©╫;
-revoke select on О©╫О©╫.* from root@localhost;
+drop database бд;
+revoke select on бд.* from root@localhost;
 --source include/show_grants.inc
 set names latin1;
 
@@ -1764,7 +1764,7 @@ connect (con1,localhost,user1,,);
 --echo ** Connect as user1 and create a procedure.
 --echo ** The creation will imply implicitly assigned
 --echo ** EXECUTE and ALTER ROUTINE privileges to
---echo ** the current user user1@localhost.
+--echo ** the current user user1@localhost. 
 SELECT @@GLOBAL.sql_mode;
 SELECT @@SESSION.sql_mode;
 CREATE DATABASE db1;
@@ -1804,7 +1804,7 @@ DROP DATABASE db1;
 
 
 --echo #
---echo # Bug #25863 No database selected error, but documentation
+--echo # Bug #25863 No database selected error, but documentation 
 --echo #            says * for global allowed
 --echo #
 
@@ -1939,9 +1939,9 @@ REVOKE ALL PRIVILEGES, GRANT OPTION FROM mysqltest_u1@localhost;
 SHOW GRANTS FOR mysqltest_u1@localhost;
 
 --echo
---echo # --
+--echo # -- 
 --echo # -- Check that DB-level SELECT allows SHOW CREATE TABLE.
---echo # --
+--echo # -- 
 
 --echo
 GRANT SELECT ON mysqltest_db1.* TO mysqltest_u1@localhost;
@@ -1949,9 +1949,9 @@ GRANT SELECT ON mysqltest_db1.* TO mysqltest_u1@localhost;
 --source include/bug38347.inc
 
 --echo
---echo # --
+--echo # -- 
 --echo # -- Check that DB-level INSERT allows SHOW CREATE TABLE.
---echo # --
+--echo # -- 
 
 --echo
 GRANT INSERT ON mysqltest_db1.* TO mysqltest_u1@localhost;
@@ -1959,9 +1959,9 @@ GRANT INSERT ON mysqltest_db1.* TO mysqltest_u1@localhost;
 --source include/bug38347.inc
 
 --echo
---echo # --
+--echo # -- 
 --echo # -- Check that DB-level UPDATE allows SHOW CREATE TABLE.
---echo # --
+--echo # -- 
 
 --echo
 GRANT UPDATE ON mysqltest_db1.* TO mysqltest_u1@localhost;
@@ -1969,9 +1969,9 @@ GRANT UPDATE ON mysqltest_db1.* TO mysqltest_u1@localhost;
 --source include/bug38347.inc
 
 --echo
---echo # --
+--echo # -- 
 --echo # -- Check that DB-level DELETE allows SHOW CREATE TABLE.
---echo # --
+--echo # -- 
 
 --echo
 GRANT DELETE ON mysqltest_db1.* TO mysqltest_u1@localhost;
@@ -1979,9 +1979,9 @@ GRANT DELETE ON mysqltest_db1.* TO mysqltest_u1@localhost;
 --source include/bug38347.inc
 
 --echo
---echo # --
+--echo # -- 
 --echo # -- Check that DB-level CREATE allows SHOW CREATE TABLE.
---echo # --
+--echo # -- 
 
 --echo
 GRANT CREATE ON mysqltest_db1.* TO mysqltest_u1@localhost;
@@ -1989,9 +1989,9 @@ GRANT CREATE ON mysqltest_db1.* TO mysqltest_u1@localhost;
 --source include/bug38347.inc
 
 --echo
---echo # --
+--echo # -- 
 --echo # -- Check that DB-level DROP allows SHOW CREATE TABLE.
---echo # --
+--echo # -- 
 
 --echo
 GRANT DROP ON mysqltest_db1.* TO mysqltest_u1@localhost;
@@ -1999,9 +1999,9 @@ GRANT DROP ON mysqltest_db1.* TO mysqltest_u1@localhost;
 --source include/bug38347.inc
 
 --echo
---echo # --
+--echo # -- 
 --echo # -- Check that DB-level ALTER allows SHOW CREATE TABLE.
---echo # --
+--echo # -- 
 
 --echo
 GRANT ALTER ON mysqltest_db1.* TO mysqltest_u1@localhost;
@@ -2009,9 +2009,9 @@ GRANT ALTER ON mysqltest_db1.* TO mysqltest_u1@localhost;
 --source include/bug38347.inc
 
 --echo
---echo # --
+--echo # -- 
 --echo # -- Check that DB-level INDEX allows SHOW CREATE TABLE.
---echo # --
+--echo # -- 
 
 --echo
 GRANT INDEX ON mysqltest_db1.* TO mysqltest_u1@localhost;
@@ -2019,9 +2019,9 @@ GRANT INDEX ON mysqltest_db1.* TO mysqltest_u1@localhost;
 --source include/bug38347.inc
 
 --echo
---echo # --
+--echo # -- 
 --echo # -- Check that DB-level REFERENCES allows SHOW CREATE TABLE.
---echo # --
+--echo # -- 
 
 --echo
 GRANT REFERENCES ON mysqltest_db1.* TO mysqltest_u1@localhost;
@@ -2029,9 +2029,9 @@ GRANT REFERENCES ON mysqltest_db1.* TO mysqltest_u1@localhost;
 --source include/bug38347.inc
 
 --echo
---echo # --
+--echo # -- 
 --echo # -- Check that DB-level CREATE VIEW allows SHOW CREATE TABLE.
---echo # --
+--echo # -- 
 
 --echo
 GRANT CREATE VIEW ON mysqltest_db1.* TO mysqltest_u1@localhost;
@@ -2039,9 +2039,9 @@ GRANT CREATE VIEW ON mysqltest_db1.* TO mysqltest_u1@localhost;
 --source include/bug38347.inc
 
 --echo
---echo # --
+--echo # -- 
 --echo # -- Check that DB-level SHOW VIEW allows SHOW CREATE TABLE.
---echo # --
+--echo # -- 
 
 --echo
 GRANT SHOW VIEW ON mysqltest_db1.* TO mysqltest_u1@localhost;
@@ -2049,9 +2049,9 @@ GRANT SHOW VIEW ON mysqltest_db1.* TO mysqltest_u1@localhost;
 --source include/bug38347.inc
 
 --echo
---echo # --
+--echo # -- 
 --echo # -- Check that table-level SELECT allows SHOW CREATE TABLE.
---echo # --
+--echo # -- 
 
 --echo
 GRANT SELECT ON mysqltest_db1.t1 TO mysqltest_u1@localhost;
@@ -2059,9 +2059,9 @@ GRANT SELECT ON mysqltest_db1.t1 TO mysqltest_u1@localhost;
 --source include/bug38347.inc
 
 --echo
---echo # --
+--echo # -- 
 --echo # -- Check that table-level INSERT allows SHOW CREATE TABLE.
---echo # --
+--echo # -- 
 
 --echo
 GRANT INSERT ON mysqltest_db1.t1 TO mysqltest_u1@localhost;
@@ -2069,9 +2069,9 @@ GRANT INSERT ON mysqltest_db1.t1 TO mysqltest_u1@localhost;
 --source include/bug38347.inc
 
 --echo
---echo # --
+--echo # -- 
 --echo # -- Check that table-level UPDATE allows SHOW CREATE TABLE.
---echo # --
+--echo # -- 
 
 --echo
 GRANT UPDATE ON mysqltest_db1.t1 TO mysqltest_u1@localhost;
@@ -2079,9 +2079,9 @@ GRANT UPDATE ON mysqltest_db1.t1 TO mysqltest_u1@localhost;
 --source include/bug38347.inc
 
 --echo
---echo # --
+--echo # -- 
 --echo # -- Check that table-level DELETE allows SHOW CREATE TABLE.
---echo # --
+--echo # -- 
 
 --echo
 GRANT DELETE ON mysqltest_db1.t1 TO mysqltest_u1@localhost;
@@ -2089,9 +2089,9 @@ GRANT DELETE ON mysqltest_db1.t1 TO mysqltest_u1@localhost;
 --source include/bug38347.inc
 
 --echo
---echo # --
+--echo # -- 
 --echo # -- Check that table-level CREATE allows SHOW CREATE TABLE.
---echo # --
+--echo # -- 
 
 --echo
 GRANT CREATE ON mysqltest_db1.t1 TO mysqltest_u1@localhost;
@@ -2099,9 +2099,9 @@ GRANT CREATE ON mysqltest_db1.t1 TO mysqltest_u1@localhost;
 --source include/bug38347.inc
 
 --echo
---echo # --
+--echo # -- 
 --echo # -- Check that table-level DROP allows SHOW CREATE TABLE.
---echo # --
+--echo # -- 
 
 --echo
 GRANT DROP ON mysqltest_db1.t1 TO mysqltest_u1@localhost;
@@ -2109,9 +2109,9 @@ GRANT DROP ON mysqltest_db1.t1 TO mysqltest_u1@localhost;
 --source include/bug38347.inc
 
 --echo
---echo # --
+--echo # -- 
 --echo # -- Check that table-level ALTER allows SHOW CREATE TABLE.
---echo # --
+--echo # -- 
 
 --echo
 GRANT ALTER ON mysqltest_db1.t1 TO mysqltest_u1@localhost;
@@ -2119,9 +2119,9 @@ GRANT ALTER ON mysqltest_db1.t1 TO mysqltest_u1@localhost;
 --source include/bug38347.inc
 
 --echo
---echo # --
+--echo # -- 
 --echo # -- Check that table-level INDEX allows SHOW CREATE TABLE.
---echo # --
+--echo # -- 
 
 --echo
 GRANT INDEX ON mysqltest_db1.t1 TO mysqltest_u1@localhost;
@@ -2129,9 +2129,9 @@ GRANT INDEX ON mysqltest_db1.t1 TO mysqltest_u1@localhost;
 --source include/bug38347.inc
 
 --echo
---echo # --
+--echo # -- 
 --echo # -- Check that table-level REFERENCES allows SHOW CREATE TABLE.
---echo # --
+--echo # -- 
 
 --echo
 GRANT REFERENCES ON mysqltest_db1.t1 TO mysqltest_u1@localhost;
@@ -2139,9 +2139,9 @@ GRANT REFERENCES ON mysqltest_db1.t1 TO mysqltest_u1@localhost;
 --source include/bug38347.inc
 
 --echo
---echo # --
+--echo # -- 
 --echo # -- Check that table-level CREATE VIEW allows SHOW CREATE TABLE.
---echo # --
+--echo # -- 
 
 --echo
 GRANT CREATE VIEW ON mysqltest_db1.t1 TO mysqltest_u1@localhost;
@@ -2149,9 +2149,9 @@ GRANT CREATE VIEW ON mysqltest_db1.t1 TO mysqltest_u1@localhost;
 --source include/bug38347.inc
 
 --echo
---echo # --
+--echo # -- 
 --echo # -- Check that table-level SHOW VIEW allows SHOW CREATE TABLE.
---echo # --
+--echo # -- 
 
 --echo
 GRANT SHOW VIEW ON mysqltest_db1.t1 TO mysqltest_u1@localhost;
@@ -2159,9 +2159,9 @@ GRANT SHOW VIEW ON mysqltest_db1.t1 TO mysqltest_u1@localhost;
 --source include/bug38347.inc
 
 --echo
---echo # --
+--echo # -- 
 --echo # -- Cleanup.
---echo # --
+--echo # -- 
 
 --echo
 DROP DATABASE mysqltest_db1;
@@ -2223,38 +2223,38 @@ DROP USER 'untrusted'@localhost;
 DROP DATABASE secret;
 
 --echo #
---echo # Bug#12766319 - 61865: RENAME USER DOES NOT WORK CORRECTLY -
+--echo # Bug#12766319 - 61865: RENAME USER DOES NOT WORK CORRECTLY - 
 --echo #                       REQUIRES FLUSH PRIVILEGES
 --echo #
 
 CREATE USER foo@'127.0.0.1';
 GRANT ALL ON *.* TO foo@'127.0.0.1';
 
---echo # First attempt, should connect successfully
-connect (conn1, '127.0.0.1', foo,,test);
-SELECT user(), current_user();
+--echo # First attempt, should connect successfully 
+connect (conn1, '127.0.0.1', foo,,test); 
+SELECT user(), current_user(); 
 
 --echo # Rename the user
 RENAME USER foo@'127.0.0.1' to foo@'127.0.0.0/255.0.0.0';
 
 --echo # Second attempt, should connect successfully as its valid mask
---echo # This was failing without fix
-connect (conn2, '127.0.0.1', foo,,test);
-SELECT user(), current_user();
+--echo # This was failing without fix 
+connect (conn2, '127.0.0.1', foo,,test); 
+SELECT user(), current_user(); 
 
 --echo # Rename the user back to original
 RENAME USER foo@'127.0.0.0/255.0.0.0' to foo@'127.0.0.1';
 
---echo # Third attempt, should connect successfully
-connect (conn3, '127.0.0.1', foo,,test);
-SELECT user(), current_user();
+--echo # Third attempt, should connect successfully 
+connect (conn3, '127.0.0.1', foo,,test); 
+SELECT user(), current_user(); 
 
 --echo # Clean-up
 connection default;
 disconnect conn1;
 disconnect conn2;
 disconnect conn3;
-DROP USER foo@'127.0.0.1';
+DROP USER foo@'127.0.0.1'; 
 
 --echo # End of Bug#12766319
 
@@ -2585,8 +2585,8 @@ connect (con_grant,localhost,user_name_len_25_01234567,,);
 
 CREATE DATABASE db_1;
 
-CREATE TABLE db_1.test_table (name varchar(15) not null, surname varchar(20) not null,
-email varchar(50) null, street varchar(50) null, city varchar(50) null,
+CREATE TABLE db_1.test_table (name varchar(15) not null, surname varchar(20) not null, 
+email varchar(50) null, street varchar(50) null, city varchar(50) null, 
 is_active int default 1 );
 
 connection con_grant;
@@ -2618,13 +2618,13 @@ connect (con_grant,localhost,user_name_len_25_01234567,,,,,SSL);
 SELECT * FROM db_1.test_table;
 
 --error ER_TABLEACCESS_DENIED_ERROR
-UPDATE db_1.test_table SET street='couldbemuchworse_street' WHERE name='rob';
+UPDATE db_1.test_table SET street='couldbemuchworse_street' WHERE name='rob'; 
 
 connection default;
 GRANT UPDATE ON db_1.test_table TO user_name_len_25_01234567@localhost;
 
 connection con_grant;
-UPDATE db_1.test_table SET street='couldbemuchworse_street' WHERE name='rob';
+UPDATE db_1.test_table SET street='couldbemuchworse_street' WHERE name='rob'; 
 --error ER_TABLEACCESS_DENIED_ERROR
 DELETE FROM db_1.test_table WHERE name='rob';
 
