@@ -10158,7 +10158,7 @@ struct my_option my_long_early_options[] = {
      GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
     {"keyring-migration-destination", OPT_KEYRING_MIGRATION_DESTINATION,
 #ifdef WITH_WSREP
-     "Keyring plugin or component to which the keys are migrated to."
+     "Keyring plugin or component to which the keys are migrated to. "
      "This option must be specified along with --keyring-migration-source.",
 #else
      "Keyring plugin or component to which the keys are migrated to.",
