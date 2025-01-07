@@ -308,11 +308,14 @@ bool all_tables_not_ok(THD *thd, Table_ref *tables) {
       wsrep_check_mode(WSREP_MODE_IGNORE_NATIVE_REPLICATION_FILTER_RULES))
     return false;
 
-  bool ret = rpl_filter->is_on() && tables && !thd->sp_runtime_ctx &&
+  if (!rpl_filter->is_on()) return false;
+
+  bool ret = tables && !thd->sp_runtime_ctx &&
              !rpl_filter->tables_ok(thd->db().str, tables);
-  // This transaction is anyways going to be skipped. So skip the transaction
-  // in the async monitor as well
-  if (ret && WSREP(thd) && thd->system_thread == SYSTEM_THREAD_SLAVE_WORKER &&
+
+  // If this transaction is anyways going to be skipped, then skip the
+  // transaction in the async monitor as well
+  if (!ret && WSREP(thd) && thd->system_thread == SYSTEM_THREAD_SLAVE_WORKER &&
       !thd->wsrep_applier) {
     Slave_worker *sw = dynamic_cast<Slave_worker *>(thd->rli_slave);
     Wsrep_async_monitor *wsrep_async_monitor{sw->get_wsrep_async_monitor()};
