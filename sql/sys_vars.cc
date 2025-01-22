@@ -8568,6 +8568,15 @@ static Sys_var_enum Sys_wsrep_disk_pages_encrypt(
     READ_ONLY GLOBAL_VAR(wsrep_disk_pages_encrypt), CMD_LINE(OPT_ARG), wsrep_encrypt_modes,
     DEFAULT(WSREP_ENCRYPT_MODE_NONE), NO_MUTEX_GUARD, NOT_IN_BINLOG);
 
+static Sys_var_bool Sys_wsrep_async_monitor(
+    "wsrep_use_async_monitor",
+    "Use Async Monitors to avoid deadlock of replicated transactions in a multi-threaded replica. "
+    "Deadlock is possible when the PXC replica tries to commit the replicated transactions in galera "
+    "in a different order than its order in the relay log. Use 'wsrep_use_async_monitor' to avoid "
+    "such deadlocks."
+    "This variable is only allowed to be changed through command line.",
+    READ_ONLY GLOBAL_VAR(wsrep_use_async_monitor), CMD_LINE(OPT_ARG),
+    DEFAULT(true), NO_MUTEX_GUARD, NOT_IN_BINLOG);
 #endif /* WITH_WSREP */
 
 static bool check_set_require_row_format(sys_var *, THD *thd, set_var *var) {

@@ -86,7 +86,7 @@ Prefix: %{_sysconfdir}
 
 #Placeholder should be replaced on preparation stage
 %if %{undefined galera_version}
- %define galera_version 4.16
+ %define galera_version 4.20
 %endif
 
 %if %{undefined galera_revision}
@@ -1949,6 +1949,11 @@ rm -rf %{pxc_telemetry}
 %{_libdir}/mysqlrouter/private/libmysqlrouter_routing.so.*
 %{_libdir}/mysqlrouter/private/libmysqlrouter_destination_status.so.*
 %{_libdir}/mysqlrouter/private/libmysqlrouter_routing_connections.so.*
+%{_libdir}/mysqlrouter/private/libmysqlrouter_cluster.so.*
+%{_libdir}/mysqlrouter/private/libmysqlrouter_http_server.so.*
+%{_libdir}/mysqlrouter/private/libmysqlrouter_mysql.so.*
+%{_libdir}/mysqlrouter/private/libmysqlrouter_utils.so.*
+
 %dir %{_libdir}/mysqlrouter
 %dir %{_libdir}/mysqlrouter/private
 %{_libdir}/mysqlrouter/*.so*

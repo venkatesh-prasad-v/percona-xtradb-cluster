@@ -315,7 +315,15 @@ IF(LINUX_ALPINE)
 ENDIF()
 
 IF(MY_COMPILER_IS_GNU AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 12)
-  ADD_COMPILE_FLAGS(regexp_engine-t.cc COMPILE_FLAGS "-Wno-restrict")
+  ADD_COMPILE_FLAGS(
+    regexp_engine-t.cc
+    gis_area-t.cc
+    gis_is_simple-t.cc
+    gis_isvalid-t.cc
+    gis_relops-t.cc
+    gis_setops-t.cc
+    COMPILE_FLAGS "-Wno-restrict"
+  )
 ENDIF()
 
 IF(WIN32)
@@ -379,6 +387,7 @@ MYSQL_ADD_EXECUTABLE(merge_small_tests-t ${ALL_SMALL_TESTS}
   ENABLE_EXPORTS
   LINK_LIBRARIES sqlgunitlib gunit_small extra::rapidjson extra::boost
   )
+DOWNGRADE_STRINGOP_WARNINGS(merge_small_tests-t)
 
 LIST(APPEND ALL_LARGE_TESTS ../../storage/example/ha_example.cc)
 
@@ -387,6 +396,9 @@ MYSQL_ADD_EXECUTABLE(merge_large_tests-t ${ALL_LARGE_TESTS}
   ENABLE_EXPORTS
   LINK_LIBRARIES gunit_large server_unittest_library
   )
+IF(MY_COMPILER_IS_GNU)
+  MY_TARGET_LINK_OPTIONS(merge_large_tests-t "-Wno-alloc-size-larger-than")
+ENDIF()
 
 FOREACH(test ${TESTS})
   MYSQL_ADD_EXECUTABLE(${test}-t ${test}-t.cc
@@ -453,6 +465,18 @@ MYSQL_ADD_EXECUTABLE(rpl_event_ctx-t rpl_event_ctx-t.cc
   ENABLE_EXPORTS
   ADD_TEST rpl_event_ctx
   LINK_LIBRARIES rpl_event_ctx_lib gunit_small
+)
+
+# WITH_WSREP
+ADD_LIBRARY(wsrep_async_monitor_lib STATIC
+  ${CMAKE_SOURCE_DIR}/sql/wsrep_async_monitor.cc
+)
+TARGET_LINK_LIBRARIES(wsrep_async_monitor_lib)
+
+MYSQL_ADD_EXECUTABLE(wsrep_async_monitor-t wsrep_async_monitor-t.cc
+  ENABLE_EXPORTS
+  ADD_TEST wsrep_async_monitor
+  LINK_LIBRARIES wsrep_async_monitor_lib gunit_small
 )
 
 ADD_SUBDIRECTORY(ddl_rewriter)
