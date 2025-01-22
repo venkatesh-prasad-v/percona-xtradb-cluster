@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2007, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2007, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -246,7 +247,7 @@ static bool populate_options(MYSQL *mysql, MYSQL_STMT *stmt, int *option_id,
     BINDS(bind2[2], name, &l0);
     BINDS(bind2[3], value, &l1);
 
-    if (mysql_stmt_bind_param(stmt, bind2)) {
+    if (mysql_stmt_bind_named_param(stmt, bind2, std::size(bind2), nullptr)) {
       g_logger.error("Failed to bind: %s", mysql_error(mysql));
       return false;
     }
@@ -279,7 +280,7 @@ static bool populate_db(atrt_config &config, atrt_process *mysqld) {
       BINDI(bind[0], &id);
       BINDS(bind[1], config.m_hosts[i]->m_hostname.c_str(), &l0);
       BINDI(bind[2], &port);
-      if (mysql_stmt_bind_param(stmt, bind)) {
+      if (mysql_stmt_bind_named_param(stmt, bind, std::size(bind), nullptr)) {
         g_logger.error("Failed to bind: %s", mysql_error(&mysqld->m_mysql));
         return false;
       }
@@ -309,7 +310,7 @@ static bool populate_db(atrt_config &config, atrt_process *mysqld) {
       BINDI(bind[0], &id);
       BINDS(bind[1], config.m_clusters[i]->m_name.c_str(), &l0);
 
-      if (mysql_stmt_bind_param(stmt, bind)) {
+      if (mysql_stmt_bind_named_param(stmt, bind, std::size(bind), nullptr)) {
         g_logger.error("Failed to bind: %s", mysql_error(&mysqld->m_mysql));
         return false;
       }
@@ -391,7 +392,7 @@ static bool populate_db(atrt_config &config, atrt_process *mysqld) {
       BINDS(bind[5], state, &l2);
       BINDI(bind[6], &node_id);
 
-      if (mysql_stmt_bind_param(stmt, bind)) {
+      if (mysql_stmt_bind_named_param(stmt, bind, std::size(bind), nullptr)) {
         g_logger.error("Failed to bind: %s", mysql_error(&mysqld->m_mysql));
         return false;
       }
@@ -418,22 +419,22 @@ static bool populate_db(atrt_config &config, atrt_process *mysqld) {
 }
 
 static bool setup_repl(atrt_process *dst, atrt_process *src) {
-  if (!run_query(src, "STOP SLAVE")) {
-    g_logger.error("Failed to stop slave: %s", mysql_error(&src->m_mysql));
+  if (!run_query(src, "STOP REPLICA")) {
+    g_logger.error("Failed to stop replica: %s", mysql_error(&src->m_mysql));
     return false;
   }
 
-  if (!run_query(src, "RESET SLAVE")) {
-    g_logger.error("Failed to reset slave: %s", mysql_error(&src->m_mysql));
+  if (!run_query(src, "RESET REPLICA")) {
+    g_logger.error("Failed to reset replica: %s", mysql_error(&src->m_mysql));
     return false;
   }
 
   BaseString tmp;
   tmp.assfmt(
-      "CHANGE MASTER TO "
-      " MASTER_HOST='%s',"
-      " MASTER_PORT=%u,"
-      " MASTER_USER='root'",
+      "CHANGE REPLICATION SOURCE TO "
+      " SOURCE_HOST='%s',"
+      " SOURCE_PORT=%u,"
+      " SOURCE_USER='root'",
       dst->m_host->m_hostname.c_str(), atoi(find(dst, "--port=")));
 
   if (!run_query(src, tmp.c_str())) {
@@ -443,8 +444,8 @@ static bool setup_repl(atrt_process *dst, atrt_process *src) {
     return false;
   }
 
-  if (!run_query(src, "START SLAVE")) {
-    g_logger.error("Failed to start slave: %s", mysql_error(&src->m_mysql));
+  if (!run_query(src, "START REPLICA")) {
+    g_logger.error("Failed to start replica: %s", mysql_error(&src->m_mysql));
     return false;
   }
 

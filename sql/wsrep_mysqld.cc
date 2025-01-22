@@ -654,10 +654,10 @@ void wsrep_init_sidno(const wsrep::id &uuid) {
     memcpy((void *)&sid, (const uchar *)ltid_uuid.data, 16);
   }
 
-  global_sid_lock->wrlock();
-  wsrep_sidno = global_sid_map->add_sid(sid);
+  global_tsid_lock->wrlock();
+  wsrep_sidno = global_tsid_map->add_tsid(sid);
   WSREP_INFO("Initialized wsrep sidno %d", wsrep_sidno);
-  global_sid_lock->unlock();
+  global_tsid_lock->unlock();
 }
 
 bool wsrep_init_schema(THD *thd) {
@@ -1937,8 +1937,9 @@ int wsrep_to_buf_helper(THD *thd, const char *query, uint query_len,
   }
 
   if ((thd->variables.option_bits & OPTION_BIN_LOG) == 0) {
-    Intvar_log_event ev((uchar)binary_log::Intvar_event::BINLOG_CONTROL_EVENT,
-                        0);
+    Intvar_log_event ev(
+        thd, (uchar)mysql::binlog::event::Intvar_event::BINLOG_CONTROL_EVENT,
+        0);
     if (ev.write(&tmp_io_cache)) ret = 1;
   }
 
@@ -3335,8 +3336,7 @@ int wsrep_ignored_error_code(Log_event *ev, int error) {
 
   if ((wsrep_ignore_apply_errors & WSREP_IGNORE_ERRORS_ON_RECONCILING_DML)) {
     const int ev_type = ev->get_type_code();
-    if ((ev_type == binary_log::DELETE_ROWS_EVENT ||
-         ev_type == binary_log::DELETE_ROWS_EVENT_V1) &&
+    if (ev_type == mysql::binlog::event::DELETE_ROWS_EVENT &&
         error == ER_KEY_NOT_FOUND)
       goto ignore_error;
   }
@@ -3421,4 +3421,29 @@ bool wsrep_new_master_key(const std::string &keyId) {
 bool wsrep_rotate_master_key() {
   wsrep::provider &provider = Wsrep_server_state::instance().provider();
   return (wsrep::provider::status::success != provider.rotate_gcache_key());
+}
+
+bool wsrep_keyring_component_loaded() {
+  if (masterKeyManager) {
+    return masterKeyManager->IsServiceAlive();
+  }
+  return false;
+}
+bool wsrep_should_replicate_for_table(Table_ref * table_ref) {
+  if (!table_ref) return false;
+
+  if (!is_perfschema_db(table_ref->db)) {
+    return true;
+  } else {
+    // This is P_S table.
+    if (!my_strcasecmp(system_charset_info, "host_cache", table_ref->table_name)) {
+      return true;
+    }
+    // skip all other P_S tables
+    return false;
+  }
+
+  //should never get here
+  assert(0);
+  return false;
 }

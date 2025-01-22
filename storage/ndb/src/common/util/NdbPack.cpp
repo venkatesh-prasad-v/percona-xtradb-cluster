@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2011, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2011, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -26,7 +27,7 @@
 #include <ndb_global.h>
 #include <NdbOut.hpp>
 #include <NdbPack.hpp>
-#include "m_ctype.h"
+#include "mysql/strings/m_ctype.h"
 #include "util/require.h"
 
 // NdbPack::Error
@@ -320,7 +321,7 @@ int NdbPack::DataArray::cmp(const Spec *spec, const DataArray *d2,
     const NdbSqlUtil::Type &sqlType = getSqlType(type.m_typeId);
     const Uint8 *p2 = d2->m_entries[i].m_data_ptr;
     const Uint32 n2 = d2->m_entries[i].m_data_len;
-    CHARSET_INFO *cs = all_charsets[type.m_csNumber];
+    const CHARSET_INFO *cs = all_charsets[type.m_csNumber];
     if (n1 != 0) {
       if (n2 != 0) {
         res = (*sqlType.m_cmp)(cs, p1, n1, p2, n2);
@@ -350,7 +351,7 @@ int NdbPack::Iter::cmp(const Iter &r2, const Uint8 *buf1,
       const NdbSqlUtil::Type &sqlType = getSqlType(type.m_typeId);
       const Uint8 *p1 = &buf1[r1.m_itemPos];
       const Uint8 *p2 = &buf2[r2.m_itemPos];
-      CHARSET_INFO *cs = all_charsets[type.m_csNumber];
+      const CHARSET_INFO *cs = all_charsets[type.m_csNumber];
       res = (*sqlType.m_cmp)(cs, p1, n1, p2, n2);
     } else {
       res = +1;
@@ -1317,7 +1318,7 @@ int Tdata::xcmp(const Tdata &tdata2, int *num_eq) const {
         const NdbPack::Type &type = tspec.m_spec.get_type(i);
         const int typeId = type.get_type_id();
         const int csNumber = type.get_cs_number();
-        CHARSET_INFO *cs = all_charsets[csNumber];
+        const CHARSET_INFO *cs = all_charsets[csNumber];
         switch (typeId) {
           case NDB_TYPE_INT: {
             require(cs == nullptr);

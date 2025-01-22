@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2005, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2005, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -82,6 +83,7 @@
 #include "mgmcommon/ConfigInfo.hpp"
 #include "mgmcommon/ConfigRetriever.hpp"
 #include "mgmcommon/InitConfigFileParser.hpp"
+#include "portlib/ssl_applink.h"
 #include "storage/ndb/include/mgmcommon/NdbMgm.hpp"
 #include "util/cstrbuf.h"
 
@@ -118,6 +120,8 @@ static struct my_option my_long_options[] = {
     NdbStdOpt::connectstring,
     NdbStdOpt::connect_retry_delay,
     NdbStdOpt::connect_retries,
+    NdbStdOpt::tls_search_path,
+    NdbStdOpt::mgm_tls,
     NDB_STD_OPT_DEBUG{"nodes", NDB_OPT_NOSHORT, "Print nodes", &g_nodes,
                       nullptr, nullptr, GET_BOOL, NO_ARG, 0, 0, 0, nullptr, 0,
                       nullptr},
@@ -767,6 +771,8 @@ int ConnectionTypeApply::apply(const ndb_mgm_configuration_iterator &iter) {
 }
 
 static ndb_mgm_configuration *fetch_configuration(int from_node) {
+  TlsKeyManager tlsKeyManager;
+  tlsKeyManager.init_mgm_client(opt_tls_search_path);
   ndb_mgm_configuration *conf = 0;
   NdbMgmHandle mgm = ndb_mgm_create_handle();
   if (mgm == NULL) {
@@ -783,8 +789,9 @@ static ndb_mgm_configuration *fetch_configuration(int from_node) {
     goto noconnect;
   }
 
-  if (ndb_mgm_connect(mgm, opt_connect_retries - 1, opt_connect_retry_delay,
-                      1)) {
+  ndb_mgm_set_ssl_ctx(mgm, tlsKeyManager.ctx());
+  if (ndb_mgm_connect_tls(mgm, opt_connect_retries - 1, opt_connect_retry_delay,
+                          1, opt_mgm_tls)) {
     fprintf(stderr, "Connect failed");
     fprintf(stderr, " code: %d, msg: %s\n", ndb_mgm_get_latest_error(mgm),
             ndb_mgm_get_latest_error_msg(mgm));

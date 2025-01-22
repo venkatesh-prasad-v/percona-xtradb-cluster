@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -35,6 +36,7 @@
 #include <cstring>
 #include <signaldata/DumpStateOrd.hpp>
 #include "portlib/NdbSleep.h"
+#include "util/TlsKeyManager.hpp"
 
 #define CHECK(b)                                                          \
   if (!(b)) {                                                             \
@@ -1223,6 +1225,8 @@ int runSystemRestart1(NDBT_Context *ctx, NDBT_Step *step) {
     CHECK(restarter.waitClusterStarted(timeout) == 0);
     CHECK(pNdb->waitUntilReady(timeout) == 0);
 
+    ndbout << "Clear error insert 5020" << endl;
+    CHECK(restarter.insertErrorInAllNodes(0) == 0);
     i++;
   }
 
@@ -2473,6 +2477,9 @@ int runBug56829(NDBT_Context *ctx, NDBT_Step *step) {
   const int rows = ctx->getNumRecords();
   const char *mgm = 0;  // XXX ctx->getRemoteMgm();
 
+  TlsKeyManager tlsKeyManager;
+  tlsKeyManager.init_mgm_client(opt_tls_search_path);
+
   char tabname[100];
   strcpy(tabname, tab.getName());
   char indname[100];
@@ -2497,7 +2504,9 @@ int runBug56829(NDBT_Context *ctx, NDBT_Step *step) {
              "mgm: failed to create handle");
       CHECK2(ndb_mgm_set_connectstring(h, mgm) == 0,
              ndb_mgm_get_latest_error_msg(h));
-      CHECK2(ndb_mgm_connect(h, 0, 0, 0) == 0, ndb_mgm_get_latest_error_msg(h));
+      ndb_mgm_set_ssl_ctx(h, tlsKeyManager.ctx());
+      CHECK2(ndb_mgm_connect_tls(h, 0, 0, 0, opt_mgm_tls) == 0,
+             ndb_mgm_get_latest_error_msg(h));
       g_info << "mgm: connected to " << (mgm ? mgm : "default") << endl;
 
       // make bitmask of DB nodes

@@ -1,15 +1,16 @@
-/* Copyright (c) 2021, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -63,6 +64,40 @@ class Config_reader {
     element_value = data_[element_name].Get<T>();
     return false;
   }
+
+  /**
+    Check if an element with the provided name exists.
+
+    @param [in]  element_name  Name of the element being checked
+
+    @returns status of operation
+      @retval false Element found.
+      @retval true  Element is not found.
+  */
+
+  bool has_element(const std::string &element_name);
+
+  /**
+    Check if an element value is of numeric type.
+
+    @param [in]  element_name  Name of the element being checked
+
+    @returns status of type check operation
+      @retval false Element found and it is of numeric type.
+      @retval true  Element type is not a string or element is not found.
+  */
+  bool is_number(const std::string &element_name);
+
+  /**
+    Check if an element value is of string type.
+
+    @param [in]  element_name  Name of the element being checked
+
+    @returns status of type check operation
+      @retval false Element found and it is of string type.
+      @retval true  Element type is not a string or element is not found.
+  */
+  bool is_string(const std::string &element_name);
 
  private:
   /** Configuration file path */

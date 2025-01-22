@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -26,10 +27,12 @@
 #include <NdbSleep.h>
 #include <NdbTick.h>
 #include <my_sys.h>
+#include <ndb_opts.h>
 #include <random.h>
 #include <HugoTransactions.hpp>
 #include <NDBT.hpp>
 #include <NDBT_Test.hpp>
+#include <NdbMgmd.hpp>
 #include <NdbRestarter.hpp>
 #include <NdbRestarts.hpp>
 #include <UtilTransactions.hpp>
@@ -1886,6 +1889,7 @@ int runNdbClusterConnectionDelete_connection_owner(NDBT_Context *ctx,
   // Create a new cluster connection, connect it and assign
   // to pointer so the other thread can access it.
   Ndb_cluster_connection *con = new Ndb_cluster_connection(constr);
+  con->configure_tls(opt_tls_search_path, opt_mgm_tls);
 
   const int retries = 12;
   const int retry_delay = 5;
@@ -2081,7 +2085,7 @@ int runBug28443(NDBT_Context *ctx, NDBT_Step *step) {
   }
 
 done:
-  restarter.insertErrorInAllNodes(9003);
+  restarter.insertErrorInAllNodes(0);
 
   return result;
 }
@@ -3283,6 +3287,7 @@ int testApiFailReqImpl(NDBT_Context *ctx, NDBT_Step *step) {
     return NDBT_FAILED;
   }
 
+  otherConnection->configure_tls(opt_tls_search_path, opt_mgm_tls);
   int rc = otherConnection->connect();
 
   if (rc != 0) {
@@ -3726,6 +3731,7 @@ int setupOtherConnection(NDBT_Context *ctx, NDBT_Step *step) {
     return NDBT_FAILED;
   }
 
+  otherConnection->configure_tls(opt_tls_search_path, opt_mgm_tls);
   int rc = otherConnection->connect();
 
   if (rc != 0) {
@@ -4794,8 +4800,6 @@ int runTestUnlockScan(NDBT_Context *ctx, NDBT_Step *step) {
   return NDBT_OK;
 }
 
-#include <NdbMgmd.hpp>
-
 class NodeIdReservations {
   bool m_ids[MAX_NODES];
   NdbMutex m_mutex;
@@ -4863,6 +4867,7 @@ int runNdbClusterConnectInit(NDBT_Context *ctx, NDBT_Step *step) {
   {
     NdbMgmd mgmd;
 
+    mgmd.use_tls(opt_tls_search_path, opt_mgm_tls);
     if (!mgmd.connect()) return NDBT_FAILED;
 
     ndb_mgm_node_type node_types[2] = {NDB_MGM_NODE_TYPE_API,
@@ -4929,6 +4934,7 @@ int runNdbClusterConnect(NDBT_Context *ctx, NDBT_Step *step) {
       ndbout_c("thread %u waiting complete", step_no);
     }
     Ndb_cluster_connection con(constr);
+    con.configure_tls(opt_tls_search_path, opt_mgm_tls);
 
     const int retries = 12;
     const int retry_delay = 5;
@@ -5105,6 +5111,7 @@ static bool check_connect_no_such_host() {
   for (int i = 0; i < 3; i++) {
     const char *no_such_host = "no_such_host:1186";
     Ndb_cluster_connection con(no_such_host);
+    con.configure_tls(opt_tls_search_path, opt_mgm_tls);
 
     const int verbose = 1;
     int res = con.connect(i, i, verbose);
@@ -5126,6 +5133,7 @@ static bool check_connect_until_no_more_nodeid(const char *constr) {
   Vector<Ndb_cluster_connection *> connections;
   while (true) {
     Ndb_cluster_connection *con = new Ndb_cluster_connection(constr);
+    con->configure_tls(opt_tls_search_path, opt_mgm_tls);
     if (!con) {
       g_err << "Failed to create another Ndb_cluster_connection" << endl;
       result = false;
@@ -5967,6 +5975,7 @@ int testSchemaObjectOwnerCheck(NDBT_Context *ctx, NDBT_Step *step) {
       result = NDBT_FAILED;
       break;
     }
+    otherConnection->configure_tls(opt_tls_search_path, opt_mgm_tls);
     int rc = otherConnection->connect();
     if (rc != 0) {
       ndbout << "Connect of otherConnection failed with rc " << rc << endl;
@@ -7229,7 +7238,6 @@ int runCheckSlowCommit(NDBT_Context *ctx, NDBT_Step *step) {
           errorCode = 8114;
           break;
       }
-      ndbout << "Inserting error " << errorCode;
 
       int ret = runCheckWriteTransactionOverOtherNodeFailure(
           ctx, step, restarter, errorCode);
@@ -7413,6 +7421,7 @@ int testSlowConnectEnable(NDBT_Context *ctx, NDBT_Step *step) {
       break;
     }
 
+    otherConnection->configure_tls(opt_tls_search_path, opt_mgm_tls);
     int rc = otherConnection->connect();
     if (rc != 0) {
       ndbout << "Connection failed with " << rc << endl;

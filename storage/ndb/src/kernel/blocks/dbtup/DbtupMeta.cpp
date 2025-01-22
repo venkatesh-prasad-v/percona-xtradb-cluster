@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -1134,8 +1135,8 @@ void Dbtup::handleAlterTablePrepare(Signal *signal, const AlterTabReq *req,
       ALTER_TAB_REQ[commit]).
     */
     Uint32 *desc = &tableDescriptor[tableDescriptorRef].tabDescr;
-    CHARSET_INFO **CharsetArray =
-        (CHARSET_INFO **)(desc + regAlterTabOpPtr.p->tabDesOffset[2]);
+    const CHARSET_INFO **CharsetArray =
+        (const CHARSET_INFO **)(desc + regAlterTabOpPtr.p->tabDesOffset[2]);
     memcpy(CharsetArray, regTabPtr->charsetArray,
            sizeof(*CharsetArray) * regTabPtr->noOfCharsets);
     Uint32 *const attrDesPtrStart = desc + regAlterTabOpPtr.p->tabDesOffset[4];
@@ -1400,11 +1401,11 @@ void Dbtup::handleAlterTableAbort(Signal *signal, const AlterTabReq *req,
   If needed, attrDes2 will be updated with the correct charsetPos and
   charsetIndex will be updated to point to next free charsetPos slot.
 */
-void Dbtup::handleCharsetPos(Uint32 csNumber, CHARSET_INFO **charsetArray,
+void Dbtup::handleCharsetPos(Uint32 csNumber, const CHARSET_INFO **charsetArray,
                              Uint32 noOfCharsets, Uint32 &charsetIndex,
                              Uint32 &attrDes2) {
   if (csNumber != 0) {
-    CHARSET_INFO *cs = all_charsets[csNumber];
+    const CHARSET_INFO *cs = all_charsets[csNumber];
     ndbrequire(cs != NULL);
     Uint32 i = 0;
     while (i < charsetIndex) {
@@ -1706,7 +1707,7 @@ void Dbtup::setUpDescriptorReferences(Uint32 descriptorReference,
   Uint32 *desc = &tableDescriptor[descriptorReference].tabDescr;
   regTabPtr->readFunctionArray = (ReadFunction *)(desc + offset[0]);
   regTabPtr->updateFunctionArray = (UpdateFunction *)(desc + offset[1]);
-  regTabPtr->charsetArray = (CHARSET_INFO **)(desc + offset[2]);
+  regTabPtr->charsetArray = (const CHARSET_INFO **)(desc + offset[2]);
   regTabPtr->readKeyArray = descriptorReference + offset[3];
   regTabPtr->tabDescriptor = descriptorReference + offset[4];
   regTabPtr->m_real_order_descriptor = descriptorReference + offset[5];
@@ -2410,7 +2411,7 @@ void Dbtup::lcp_open_ctl_file(Signal *signal, Uint32 tabPtrI, Uint32 tableId,
   req->fileFlags = FsOpenReq::OM_READONLY;
   FsOpenReq::v2_setCount(req->fileNumber, 0xFFFFFFFF);
   req->userPointer = tabPtrI;
-  FsOpenReq::setVersion(req->fileNumber, 5);
+  FsOpenReq::setVersion(req->fileNumber, FsOpenReq::V_LCP);
   FsOpenReq::setSuffix(req->fileNumber, FsOpenReq::S_CTL);
   FsOpenReq::v5_setLcpNo(req->fileNumber, ctl_file);
   FsOpenReq::v5_setTableId(req->fileNumber, tableId);
@@ -2721,7 +2722,7 @@ void Dbtup::drop_fragment_fsremove(Signal *signal, TablerecPtr tabPtr,
   req->directory = 0;
   req->ownDirectory = 0;
   for (Uint32 i = 0; i < loop_count; i++) {
-    FsOpenReq::setVersion(req->fileNumber, 5);
+    FsOpenReq::setVersion(req->fileNumber, FsOpenReq::V_LCP);
     if (file_type == 2) {
       jam();
       FsOpenReq::setSuffix(req->fileNumber, FsOpenReq::S_CTL);

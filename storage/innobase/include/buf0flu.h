@@ -1,18 +1,19 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2023, Oracle and/or its affiliates.
+Copyright (c) 1995, 2024, Oracle and/or its affiliates.
 Copyright (c) 2016, Percona Inc. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -41,9 +42,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #ifndef UNIV_HOTBACKUP
 /** Checks if the page_cleaner is in active state. */
 bool buf_flush_page_cleaner_is_active();
-
-/** Returns the count of currently active LRU manager threads. */
-MY_NODISCARD size_t buf_flush_active_lru_managers() noexcept;
 
 #ifdef UNIV_DEBUG
 
@@ -146,17 +144,21 @@ is not fast enough to keep pace with the workload.
 @return true if success. */
 bool buf_flush_single_page_from_LRU(buf_pool_t *buf_pool);
 
-/** Waits until a flush batch of the given type ends.
-@param[in] buf_pool             Buffer pool instance.
-@param[in] flush_type           Flush type. */
-void buf_flush_wait_batch_end(buf_pool_t *buf_pool, buf_flush_t flush_type);
+/** Waits until there's no flush of the given type from given BP instance.
+Note that in case of BUF_FLUSH_LIST and BUF_FLUSH_LRU we also make sure there's
+no ongoing batch initialization (which could lead to flushes).
+The BUF_FLUSH_SINGLE_PAGE does not have batch initialization.
+Note, that we return as soon as there is no flush, but in general a new one
+could start right after we've returned (it's up to the caller to prevent this).
+If buf_pool is nullptr, then it will await a moment with no flushes for each
+BP instance in turn, which in general doesn't imply there was a single moment
+when all instances were quiescent - it's up to the caller to ensure that.
 
-/** Waits until a flush batch of the given type ends. This is called by a
-thread that only wants to wait for a flush to end but doesn't do any flushing
-itself.
-@param[in]      buf_pool        buffer pool instance
-@param[in]      type            BUF_FLUSH_LRU or BUF_FLUSH_LIST */
-void buf_flush_wait_batch_end_wait_only(buf_pool_t *buf_pool, buf_flush_t type);
+@param[in] buf_pool
+              The specific buffer pool instance to check.
+              Can be null, if we want to wait for each buf_pool in turn.
+@param[in] flush_type           Flush type. */
+void buf_flush_await_no_flushing(buf_pool_t *buf_pool, buf_flush_t flush_type);
 
 /** This function should be called at a mini-transaction commit, if a page was
 modified in it. Puts the block to the list of modified blocks, if it not
@@ -188,8 +190,8 @@ bool buf_flush_ready_for_replace(buf_page_t *bpage);
 #ifdef UNIV_DEBUG
 struct SYS_VAR;
 
-/** Disables page cleaner threads (coordinator and workers) and LRU manager
-threads. It's used by: SET GLOBAL innodb_page_cleaner_disabled_debug = 1 (0).
+/** Disables page cleaner threads (coordinator and workers).
+It's used by: SET GLOBAL innodb_page_cleaner_disabled_debug = 1 (0).
 @param[in]      thd             thread handle
 @param[in]      var             pointer to system variable
 @param[out]     var_ptr         where the formal string goes
@@ -201,9 +203,6 @@ void buf_flush_page_cleaner_disabled_debug_update(THD *thd, SYS_VAR *var,
 
 /** Initialize page_cleaner.  */
 void buf_flush_page_cleaner_init();
-
-/** Wait for any possible LRU flushes that are in progress to end. */
-void buf_flush_wait_LRU_batch_end();
 
 #if defined UNIV_DEBUG || defined UNIV_BUF_DEBUG
 /** Validates the flush list.
@@ -284,14 +283,20 @@ class Flush_observer {
   /** Destructor */
   ~Flush_observer() noexcept;
 
+  /** Print information about the current object.
+  @param[in,out]  out  output stream to be used.
+  @return the output stream. */
+  std::ostream &print(std::ostream &out) const;
+
   /** Check pages have been flushed and removed from the flush list
   in a buffer pool instance.
   @param[in]    instance_no     buffer pool instance no
   @return true if the pages were removed from the flush list */
   bool is_complete(size_t instance_no) {
-    return m_flushed[instance_no].fetch_add(0, std::memory_order_relaxed) ==
-               m_removed[instance_no].fetch_add(0, std::memory_order_relaxed) ||
-           m_interrupted;
+    ut_ad(m_flushed[instance_no].load() >= 0);
+    ut_ad(m_removed[instance_no].load() >= 0);
+    return m_interrupted ||
+           (m_flushed[instance_no].load() == m_removed[instance_no].load());
   }
 
   /** Interrupt observer not to wait. */
@@ -314,18 +319,13 @@ class Flush_observer {
   @param[in]    bpage           buffer page flushed */
   void notify_remove(buf_pool_t *buf_pool, buf_page_t *bpage);
 
-  /** Increase the estimate of dirty pages by this observer
-  @param[in]	block		buffer pool block */
-  void inc_estimate(const buf_block_t &block) noexcept;
-
-  /** @return estimate of dirty pages to be flushed */
-  ulint get_estimate() const noexcept {
-    return (m_estimate.load(std::memory_order_relaxed));
-  }
-
  private:
   using Counter = std::atomic_int;
   using Counters = std::vector<Counter, ut::allocator<Counter>>;
+
+#ifdef UNIV_DEBUG
+  [[nodiscard]] bool validate() const noexcept;
+#endif /* UNIV_DEBUG */
 
   /** Tablespace ID. */
   space_id_t m_space_id{};
@@ -351,13 +351,6 @@ class Flush_observer {
 
   /** True if the operation was interrupted. */
   bool m_interrupted{};
-
-  /* Estimate of pages to be flushed */
-  std::atomic<ulint> m_estimate;
-
-  /** LSN at which observer started observing. This is
-  used to find the dirty blocks that are dirtied before Observer */
-  const lsn_t m_lsn;
 };
 
 lsn_t get_flush_sync_lsn() noexcept;

@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2001, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2001, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    Without limiting anything contained in the foregoing, this file,
    which is part of C Driver for MySQL (Connector/C), is also subject to the
@@ -47,16 +48,16 @@
   Kindahl.
 */
 
+#include "my_bitmap.h"
+
 #include <assert.h>
 #include <string.h>
 #include <sys/types.h>
+#include <bit>
 
-#include "my_bit.h"
-#include "my_bitmap.h"
 #include "my_byteorder.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
-#include "my_macros.h"
 #include "my_pointer_arithmetic.h"
 #include "my_sys.h"
 #include "mysql/psi/mysql_mutex.h"
@@ -209,8 +210,8 @@ void bitmap_free(MY_BITMAP *map) {
 
 bool bitmap_fast_test_and_set(MY_BITMAP *map, uint bitmap_bit) {
   uchar *value = ((uchar *)map->bitmap) + (bitmap_bit / 8);
-  uchar bit = 1 << ((bitmap_bit)&7);
-  uchar res = (*value) & bit;
+  const uchar bit = 1 << ((bitmap_bit)&7);
+  const uchar res = (*value) & bit;
   *value |= bit;
   return res;
 }
@@ -299,7 +300,7 @@ void bitmap_set_prefix(MY_BITMAP *map, uint prefix_size) {
 }
 
 bool bitmap_is_prefix(const MY_BITMAP *map, uint prefix_size) {
-  uint prefix_bits = prefix_size % 32;
+  const uint prefix_bits = prefix_size % 32;
   my_bitmap_map *word_ptr = map->bitmap, last_word;
   my_bitmap_map *end_prefix = word_ptr + prefix_size / 32;
   assert(word_ptr && prefix_size <= map->n_bits);
@@ -417,7 +418,7 @@ bool bitmap_is_valid(const MY_BITMAP *map) {
 
 void bitmap_intersect(MY_BITMAP *map, const MY_BITMAP *map2) {
   my_bitmap_map *to = map->bitmap, *from = map2->bitmap, *end;
-  uint len = no_words_in_map(map), len2 = no_words_in_map(map2);
+  const uint len = no_words_in_map(map), len2 = no_words_in_map(map2);
 
   assert(map->bitmap && map2->bitmap);
 
@@ -453,7 +454,7 @@ void bitmap_intersect(MY_BITMAP *map, const MY_BITMAP *map2) {
 */
 
 void bitmap_set_above(MY_BITMAP *map, uint from_byte, uint use_bit) {
-  uchar use_byte = use_bit ? 0xff : 0;
+  const uchar use_byte = use_bit ? 0xff : 0;
   uchar *to = (uchar *)map->bitmap + from_byte;
   uchar *end = (uchar *)map->bitmap + (map->n_bits + 7) / 8;
 
@@ -503,10 +504,10 @@ uint bitmap_bits_set(const MY_BITMAP *map) {
   assert(map->bitmap);
   assert(map->n_bits > 0);
 
-  for (; data_ptr < end; data_ptr++) res += my_count_bits_uint32(*data_ptr);
+  for (; data_ptr < end; data_ptr++) res += std::popcount(*data_ptr);
 
   /*Reset last bits to zero*/
-  res += my_count_bits_uint32(*map->last_word_ptr & ~map->last_word_mask);
+  res += std::popcount(*map->last_word_ptr & ~map->last_word_mask);
   return res;
 }
 

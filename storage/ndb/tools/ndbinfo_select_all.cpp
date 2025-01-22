@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -29,6 +30,7 @@
 #include <NdbApi.hpp>
 #include <NdbOut.hpp>
 #include "../src/ndbapi/NdbInfo.hpp"
+#include "portlib/ssl_applink.h"
 
 #include "my_alloc.h"
 
@@ -46,6 +48,8 @@ static struct my_option my_long_options[] = {
     NdbStdOpt::ndb_nodeid,
     NdbStdOpt::connect_retry_delay,
     NdbStdOpt::connect_retries,
+    NdbStdOpt::tls_search_path,
+    NdbStdOpt::mgm_tls,
     NDB_STD_OPT_DEBUG{"loops", 'l', "Run same select several times", &loops,
                       nullptr, nullptr, GET_INT, REQUIRED_ARG, loops, 0, 0,
                       nullptr, 0, nullptr},
@@ -68,6 +72,7 @@ int main(int argc, char **argv) {
 
   Ndb_cluster_connection con(opt_ndb_connectstring, opt_ndb_nodeid);
   con.set_name("ndbinfo_select_all");
+  con.configure_tls(opt_tls_search_path, opt_mgm_tls);
   if (con.connect(opt_connect_retries - 1, opt_connect_retry_delay, 1) != 0) {
     ndbout << "Unable to connect to management server." << endl;
     return 1;

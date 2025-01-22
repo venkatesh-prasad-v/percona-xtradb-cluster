@@ -424,7 +424,7 @@ EXPLAIN FORMAT=TREE SELECT /*+ SET_VAR(rocksdb_records_in_range=10000000) */ COU
 EXPLAIN
 -> Aggregate: count(0)  (...)
     -> Filter: ((t1.a > 1) and (t1.a < 3))  (...)
-        -> Index scan on t1 using PRIMARY  (...)
+        -> Covering index scan on t1 using PRIMARY  (...)
 
 DROP TABLE t1;
 #############################################

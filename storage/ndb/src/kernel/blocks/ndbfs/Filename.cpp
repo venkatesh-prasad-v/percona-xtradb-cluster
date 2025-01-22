@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -24,6 +25,7 @@
 
 #include <ndb_global.h>
 
+#include <cassert>
 #include "DebuggerNames.hpp"
 #include "ErrorHandlingMacros.hpp"
 #include "Filename.hpp"
@@ -44,6 +46,11 @@ Filename::Filename() {}
 
 Filename::~Filename() {}
 
+bool Filename::is_under_base_path() const {
+  // Matching logic in FsOpenReq::V_FILENAME case in Filename::set below
+  return (m_base_name[0] != DIR_SEPARATOR[0]);
+}
+
 void Filename::set(Ndbfs *fs, BlockReference blockReference,
                    const Uint32 filenumber[4], bool dir,
                    SegmentedSectionPtr ptr) {
@@ -55,7 +62,7 @@ void Filename::set(Ndbfs *fs, BlockReference blockReference,
   const Uint32 version = FsOpenReq::getVersion(filenumber);
 
   size_t sz;
-  if (version == 2) {
+  if (version == FsOpenReq::V_BACKUP) {
     m_base_path_spec = FsOpenReq::BP_BACKUP;
     sz = BaseString::snprintf(theName, sizeof(theName), "%s",
                               fs->get_base_path(FsOpenReq::BP_BACKUP).c_str());
@@ -68,7 +75,7 @@ void Filename::set(Ndbfs *fs, BlockReference blockReference,
   }
 
   switch (version) {
-    case 1: {
+    case FsOpenReq::V_BLOCK: {
       const Uint32 diskNo = FsOpenReq::v1_getDisk(filenumber);
       const Uint32 table = FsOpenReq::v1_getTable(filenumber);
       const Uint32 frag = FsOpenReq::v1_getFragment(filenumber);
@@ -112,7 +119,7 @@ void Filename::set(Ndbfs *fs, BlockReference blockReference,
       }
 
     } break;
-    case 2: {
+    case FsOpenReq::V_BACKUP: {
       const Uint32 seq = FsOpenReq::v2_getSequence(filenumber);
       const Uint32 nodeId = FsOpenReq::v2_getNodeId(filenumber);
       const Uint32 partNum = FsOpenReq::v2_getPartNum(filenumber);
@@ -139,7 +146,7 @@ void Filename::set(Ndbfs *fs, BlockReference blockReference,
       }
       break;
     } break;
-    case 3: {
+    case FsOpenReq::V_DISK: {
       const Uint32 diskNo = FsOpenReq::v1_getDisk(filenumber);
 
       if (diskNo == 0xFF) {
@@ -150,7 +157,7 @@ void Filename::set(Ndbfs *fs, BlockReference blockReference,
       BaseString::snprintf(buf, sizeof(buf), "D%d%s", diskNo, DIR_SEPARATOR);
       strcat(theName, buf);
     } break;
-    case 4: {
+    case FsOpenReq::V_FILENAME: {
       const unsigned ptr_sz_bytes = ptr.sz * 4;
       if (ptr_sz_bytes > PATH_MAX) {
         ERROR_SET(ecError, NDBD_EXIT_AFS_PARAMETER, "",
@@ -183,6 +190,7 @@ void Filename::set(Ndbfs *fs, BlockReference blockReference,
       if (buf[0] == DIR_SEPARATOR[0]) {
         BaseString::snprintf(theName, theName_sz, "%s", buf);
         m_base_name = theName;
+        assert(!is_under_base_path());
       } else {
 #ifdef _WIN32
         char *b = buf;
@@ -205,7 +213,7 @@ void Filename::set(Ndbfs *fs, BlockReference blockReference,
       }
       return;  // No extension
     }
-    case 5: {
+    case FsOpenReq::V_LCP: {
       Uint32 tableId = FsOpenReq::v5_getTableId(filenumber);
       Uint32 lcpNo = FsOpenReq::v5_getLcpNo(filenumber);
       Uint32 fragId = FsOpenReq::v5_getFragmentId(filenumber);
@@ -214,8 +222,8 @@ void Filename::set(Ndbfs *fs, BlockReference blockReference,
       strcat(theName, buf);
       break;
     }
-    case 6: {
-      Uint32 bp = FsOpenReq::v5_getLcpNo(filenumber);
+    case FsOpenReq::V_BASEPATH: {
+      Uint32 bp = FsOpenReq::v6_getBasePath(filenumber);
       m_base_path_spec = bp;
       sz = BaseString::snprintf(theName, sizeof(theName), "%s",
                                 fs->get_base_path(bp).c_str());

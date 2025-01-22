@@ -1,17 +1,18 @@
 /*****************************************************************************
 
-Copyright (c) 2014, 2023, Oracle and/or its affiliates.
+Copyright (c) 2014, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -986,11 +987,13 @@ dberr_t Btree_load::page_commit(Page_load *page_loader,
 }
 
 void Btree_load::log_free_check() noexcept {
-  if (log_free_check_is_required()) {
+  ut_ad(m_n_recs > 0);
+  bool is_req = log_free_check_is_required();
+  DBUG_EXECUTE_IF("btree_load_simulate_log_free", is_req = true;);
+
+  if (is_req) {
     release();
-
     ::log_free_check();
-
     latch();
   }
 }
@@ -1008,6 +1011,7 @@ Btree_load::~Btree_load() noexcept {
 }
 
 void Btree_load::release() noexcept {
+  ut_ad(m_n_recs > 0);
   auto page_loader = m_page_loaders[0];
   page_loader->release();
 }
@@ -1055,6 +1059,7 @@ dberr_t Btree_load::prepare_space(Page_load *&page_loader, size_t level,
     auto err = page_commit(page_loader, sibling_page_loader, true);
 
     if (err != DB_SUCCESS) {
+      sibling_page_loader->finish();
       sibling_page_loader->rollback();
       ut::delete_(sibling_page_loader);
       return err;
@@ -1182,6 +1187,9 @@ dberr_t Btree_load::insert(dtuple_t *tuple, size_t level) noexcept {
           })
 
       err = insert(page_loader, tuple, big_rec, rec_size);
+      if (err == DB_SUCCESS) {
+        ++m_n_recs;
+      }
     }
   }
 
@@ -1322,8 +1330,6 @@ dberr_t Btree_load::build(Cursor &cursor) noexcept {
       break;
     }
 
-    ++m_n_recs;
-
     IF_ENABLED("ddl_btree_load_interrupt",
                interrupt_check = TRX_INTERRUPTED_CHECK;);
 
@@ -1333,6 +1339,5 @@ dberr_t Btree_load::build(Cursor &cursor) noexcept {
       break;
     }
   }
-
   return err == DB_END_OF_INDEX ? DB_SUCCESS : err;
 }

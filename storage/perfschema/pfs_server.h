@@ -1,15 +1,16 @@
-/* Copyright (c) 2008, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2024, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
   as published by the Free Software Foundation.
 
-  This program is also distributed with certain software (including
+  This program is designed to work with certain software (including
   but not limited to OpenSSL) that is licensed under separate terms,
   as designated in a particular file or component or in included license
   documentation.  The authors of MySQL hereby grant you an additional
   permission to link the program and your derivative works with the
-  separately licensed software that they have included with MySQL.
+  separately licensed software that they have either included with
+  the program or referenced in the documentation.
 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -55,10 +56,22 @@
 #define PFS_AUTOSIZE_VALUE (-1)
 
 #ifndef PFS_MAX_MUTEX_CLASS
+#ifdef WITH_WSREP
+/**
+   Max value for PXC builds.
+   WSREP patch defines 39 additional PSI_mutex_key keys:
+   key_COND_galera_* => 24
+   key_COND_wsrep_* => 15
+   Let's keep PFS_MAX_MUTEX_CLASS always bigger by this number.
+*/
+#define PFS_WSREP_MUTEX_CLASS 39
+#define PFS_MAX_MUTEX_CLASS (350 + PFS_WSREP_MUTEX_CLASS)
+#else
 #define PFS_MAX_MUTEX_CLASS 350
+#endif /* WITH WSREP */ /* PFS_MAX_MUTEX_CLASS */
 #endif
 #ifndef PFS_MAX_RWLOCK_CLASS
-#define PFS_MAX_RWLOCK_CLASS 70
+#define PFS_MAX_RWLOCK_CLASS 100
 #endif
 #ifndef PFS_MAX_COND_CLASS
 #ifdef WITH_WSREP
@@ -73,7 +86,7 @@
 #define PFS_MAX_COND_CLASS (150 + PFS_WSREP_COND_CLASS)
 #else
 #define PFS_MAX_COND_CLASS 150
-#endif /* WITH_WSREP */
+#endif /* WITH_WSREP */ /* PFS_MAX_COND_CLASS */
 
 #endif
 #ifndef PFS_MAX_THREAD_CLASS
@@ -105,6 +118,12 @@
 #endif
 #ifndef PFS_MAX_MEMORY_CLASS
 #define PFS_MAX_MEMORY_CLASS 530
+#endif
+#ifndef PFS_MAX_METER_CLASS
+#define PFS_MAX_METER_CLASS 30
+#endif
+#ifndef PFS_MAX_METRIC_CLASS
+#define PFS_MAX_METRIC_CLASS 600
 #endif
 
 #ifndef PFS_MAX_GLOBAL_SERVER_ERRORS
@@ -297,6 +316,18 @@ struct PFS_global_param {
   */
   ulong m_memory_class_sizing;
 
+  /**
+    Maximum number of instrumented meter classes.
+    @sa meter_class_lost.
+  */
+  ulong m_meter_class_sizing;
+
+  /**
+    Maximum number of instrumented metric classes.
+    @sa metric_class_lost.
+  */
+  ulong m_metric_class_sizing;
+
   long m_metadata_lock_sizing;
 
   long m_max_digest_length;
@@ -397,18 +428,6 @@ void init_pfs_instrument_array();
   Process one PFS_INSTRUMENT configuration string.
 */
 int add_pfs_instr_to_array(const char *name, const char *value);
-
-/**
-  Register/unregister notification service.
-*/
-int register_pfs_notification_service();
-int unregister_pfs_notification_service();
-
-/**
-  Register/unregister resource group service.
-*/
-int register_pfs_resource_group_service();
-int unregister_pfs_resource_group_service();
 
 /**
   Shutdown the performance schema.

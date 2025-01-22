@@ -1,15 +1,16 @@
--- Copyright (c) 2008, 2023, Oracle and/or its affiliates.
+-- Copyright (c) 2008, 2024, Oracle and/or its affiliates.
 --
 -- This program is free software; you can redistribute it and/or modify
 -- it under the terms of the GNU General Public License, version 2.0,
 -- as published by the Free Software Foundation.
 --
--- This program is also distributed with certain software (including
+-- This program is designed to work with certain software (including
 -- but not limited to OpenSSL) that is licensed under separate terms,
 -- as designated in a particular file or component or in included license
 -- documentation.  The authors of MySQL hereby grant you an additional
 -- permission to link the program and your derivative works with the
--- separately licensed software that they have included with MySQL.
+-- separately licensed software that they have either included with
+-- the program or referenced in the documentation.
 --
 -- This program is distributed in the hope that it will be useful,
 -- but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -120,7 +121,6 @@ BEGIN
                                 'auto_increment_offset',
                                 'auto_increment_increment',
                                 'wsrep_data_home_dir',
-                                'keyring_file_data',
                                 'innodb_thread_sleep_delay')
   ORDER BY VARIABLE_NAME;
 
@@ -244,6 +244,24 @@ BEGIN
   COMMIT;
   SET SESSION wsrep_on = ON;
 
+  -- During the installation of Percona Telemetry Component we create 'percona.telemetry'.
+  -- It happens during the server startup, so servers started during the test will have the same user
+  -- with different password_last_changed timestamps.
+  -- Some tests (e.g. clone plugin related) restore the clone instance state by cloning the donor. In such a case restored
+  -- instance will have different timestamps at the beginning and the end of the test and MTR check will complain because of
+  -- different tables checksums.
+  -- Workaround this problem by excluding mysql.user from checksum calculation. 
+  -- Instead, dump the table but without password_last_changed column.
+  -- This is the same approach as for INFORMATION_SCHEMA.ROUTINES above.
+  SELECT /*+SET_VAR(use_secondary_engine=OFF)*/ Host, User, Select_priv, Insert_priv, Update_priv, Delete_priv, Create_priv,
+    Drop_priv, Reload_priv, Shutdown_priv, Process_priv, File_priv, Grant_priv, References_priv, Index_priv, Alter_priv,
+    Show_db_priv, Super_priv, Create_tmp_table_priv, Lock_tables_priv, Execute_priv, Repl_slave_priv, Repl_client_priv,
+    Create_view_priv, Show_view_priv, Create_routine_priv, Alter_routine_priv, Create_user_priv, Event_priv, Trigger_priv,
+    Create_tablespace_priv, ssl_type, ssl_cipher, x509_issuer, x509_subject, max_questions, max_updates, max_connections,
+    max_user_connections, plugin, authentication_string, password_expired, password_lifetime, account_locked, Create_role_priv,
+    Drop_role_priv, Password_reuse_history, Password_reuse_time, Password_require_current, User_attributes 
+  FROM mysql.user ORDER BY Host, User;
+
   -- Checksum system tables to make sure they have been properly
   -- restored after test.
   -- skip mysql.proc however, as created timestamps may have been updated by
@@ -277,8 +295,7 @@ BEGIN
     mysql.time_zone_leap_second,
     mysql.time_zone_name,
     mysql.time_zone_transition,
-    mysql.time_zone_transition_type,
-    mysql.user;
+    mysql.time_zone_transition_type;
 
   -- Check that Replica IO Monitor thread state is the same before
   -- and after the test run, which is not running.

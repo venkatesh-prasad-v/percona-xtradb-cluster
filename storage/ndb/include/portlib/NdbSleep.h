@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -46,19 +47,19 @@ static inline void NdbSleep_MicroSleep(int microseconds) {
   LARGE_INTEGER liDueTime;
   liDueTime.QuadPart = -10LL * microseconds;
 
-  HANDLE hTimer = CreateWaitableTimer(NULL, true, NULL);
-  if (NULL == hTimer ||
-      !SetWaitableTimer(hTimer, &liDueTime, 0, NULL, NULL, 0) ||
+  HANDLE hTimer = CreateWaitableTimer(nullptr, true, nullptr);
+  if (nullptr == hTimer ||
+      !SetWaitableTimer(hTimer, &liDueTime, 0, nullptr, nullptr, 0) ||
       WaitForSingleObject(hTimer, INFINITE) != WAIT_OBJECT_0) {
 #ifndef NDEBUG
     // Error code for crash analysis
-    DWORD winerr = GetLastError();
+    DWORD winerr [[maybe_unused]] = GetLastError();
 #endif
     assert(false);
     // Fallback to millisleep in release
     NdbSleep_MilliSleep(1 + (microseconds - 1) / 1000);
   }
-  if (NULL != hTimer) {
+  if (nullptr != hTimer) {
     CloseHandle(hTimer);
   }
 #elif defined(HAVE_NANOSLEEP)

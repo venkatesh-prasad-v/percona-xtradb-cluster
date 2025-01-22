@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -141,7 +142,7 @@ struct NdbThread {
   void *object;
   void *thread_key;
 #ifdef NDB_MUTEX_DEADLOCK_DETECTOR
-  struct ndb_mutex_thr_state m_mutex_thr_state;
+  struct ndb_mutex_thr_state *m_mutex_thr_state;
 #endif
 };
 
@@ -246,7 +247,7 @@ static void *ndb_thread_wrapper(void *_ss) {
 #endif
 
 #ifdef NDB_MUTEX_DEADLOCK_DETECTOR
-      ndb_mutex_thread_init(&ss->m_mutex_thr_state);
+      ndb_mutex_thread_init(ss->m_mutex_thr_state);
 #endif
       NDB_THREAD_TLS_NDB_THREAD = ss;
       NdbMutex_Lock(ndb_thread_mutex);
@@ -258,7 +259,7 @@ static void *ndb_thread_wrapper(void *_ss) {
       NdbThread_Exit(ret);
     }
     /* will never be reached */
-    DBUG_RETURN(0);
+    DBUG_RETURN(nullptr);
   }
 }
 
@@ -278,7 +279,7 @@ struct NdbThread *NdbThread_CreateObject(const char *name) {
   }
 
   tmpThread = (struct NdbThread *)malloc(sizeof(struct NdbThread));
-  if (tmpThread == nullptr) DBUG_RETURN(NULL);
+  if (tmpThread == nullptr) DBUG_RETURN(nullptr);
 
   std::memset(tmpThread, 0, sizeof(*tmpThread));
   if (name) {
@@ -296,7 +297,7 @@ struct NdbThread *NdbThread_CreateObject(const char *name) {
   tmpThread->inited = 1;
 
 #ifdef NDB_MUTEX_DEADLOCK_DETECTOR
-  ndb_mutex_thread_init(&tmpThread->m_mutex_thr_state);
+  ndb_mutex_thread_init(tmpThread->m_mutex_thr_state);
 #endif
 
   g_main_thread = tmpThread;
@@ -311,7 +312,7 @@ struct NdbThread *NdbThread_Create(NDB_THREAD_FUNC *p_thread_func,
                                    [[maybe_unused]]) {
   DBUG_ENTER("NdbThread_Create");
 
-  if (p_thread_func == nullptr) DBUG_RETURN(NULL);
+  if (p_thread_func == nullptr) DBUG_RETURN(nullptr);
 
   NDB_THREAD_STACKSIZE thread_stack_size;
   /* Use default stack size if 0 specified */
@@ -331,14 +332,14 @@ struct NdbThread *NdbThread_Create(NDB_THREAD_FUNC *p_thread_func,
 
     Return an error if the value is negative
   */
-  if (PTHREAD_STACK_MIN < 0) DBUG_RETURN(NULL);
+  if (PTHREAD_STACK_MIN < 0) DBUG_RETURN(nullptr);
   if (thread_stack_size < static_cast<NDB_THREAD_STACKSIZE>(PTHREAD_STACK_MIN))
     thread_stack_size = PTHREAD_STACK_MIN;
 #endif
   DBUG_PRINT("info", ("stack_size: %zu", thread_stack_size));
 
   NdbThread *const tmpThread = (NdbThread *)malloc(sizeof(NdbThread));
-  if (tmpThread == nullptr) DBUG_RETURN(NULL);
+  if (tmpThread == nullptr) DBUG_RETURN(nullptr);
 
   DBUG_PRINT("info", ("thread_name: %s", p_thread_name));
 
@@ -378,7 +379,7 @@ struct NdbThread *NdbThread_Create(NDB_THREAD_FUNC *p_thread_func,
   if (result != 0) {
     free(tmpThread);
     NdbMutex_Unlock(ndb_thread_mutex);
-    DBUG_RETURN(0);
+    DBUG_RETURN(nullptr);
   }
 
   if (thread_prio == NDB_THREAD_PRIO_HIGH && f_high_prio_set) {
@@ -406,7 +407,7 @@ struct NdbThread *NdbThread_CreateLockObject(int tid) {
   DBUG_ENTER("NdbThread_CreateLockObject");
 
   tmpThread = (struct NdbThread *)malloc(sizeof(struct NdbThread));
-  if (tmpThread == nullptr) DBUG_RETURN(NULL);
+  if (tmpThread == nullptr) DBUG_RETURN(nullptr);
 
   std::memset(tmpThread, 0, sizeof(*tmpThread));
 
@@ -434,7 +435,7 @@ struct NdbThread *NdbThread_CreateLockObject(int tid) {
 #endif
 
 #ifdef NDB_MUTEX_DEADLOCK_DETECTOR
-  ndb_mutex_thread_init(&tmpThread->m_mutex_thr_state);
+  ndb_mutex_thread_init(tmpThread->m_mutex_thr_state);
 #endif
 
   DBUG_RETURN(tmpThread);
@@ -443,6 +444,9 @@ struct NdbThread *NdbThread_CreateLockObject(int tid) {
 void NdbThread_Destroy(struct NdbThread **p_thread) {
   DBUG_ENTER("NdbThread_Destroy");
   if (*p_thread != nullptr) {
+#ifdef NDB_MUTEX_DEADLOCK_DETECTOR
+    ndb_mutex_thread_exit((*p_thread)->m_mutex_thr_state);
+#endif
 #ifdef _WIN32
     HANDLE thread_handle = (*p_thread)->thread_handle;
     if (thread_handle) CloseHandle(thread_handle);
@@ -460,14 +464,14 @@ int NdbThread_WaitFor(struct NdbThread *p_wait_thread, void **status) {
 
   if (p_wait_thread == nullptr) return 0;
 
-  if (p_wait_thread->thread == 0) return 0;
+  if (p_wait_thread->thread == null_thread_initializer) return 0;
 
 #ifdef _WIN32
   {
     DWORD ret;
     HANDLE thread_handle = p_wait_thread->thread_handle;
 
-    if (thread_handle == NULL) {
+    if (thread_handle == nullptr) {
       return -1;
     }
 
@@ -791,7 +795,7 @@ int NdbThread_SetThreadPrio(struct NdbThread *pThread, unsigned int prio) {
  */
 
 static unsigned int num_processor_groups = 0;
-static unsigned int *num_processors_per_group = NULL;
+static unsigned int *num_processors_per_group = nullptr;
 static bool inited = false;
 static bool support_cpu_locking_on_windows = false;
 
@@ -834,7 +838,7 @@ static bool is_cpu_locking_supported_on_windows() {
 
   num_processors_per_group =
       (unsigned int *)malloc(num_processor_groups * sizeof(unsigned int));
-  if (num_processors_per_group == NULL) {
+  if (num_processors_per_group == nullptr) {
     return false;
   }
 
@@ -940,7 +944,7 @@ int NdbThread_SetThreadPrio(struct NdbThread *pThread, unsigned int prio) {
 
 void NdbThread_UnassignFromCPUSet(struct NdbThread *pThread,
                                   struct NdbCpuSet *cpu_set) {
-  if (cpu_set == NULL) {
+  if (cpu_set == nullptr) {
     assert(false);
     return;
   }
@@ -961,10 +965,10 @@ int NdbThread_UnlockCPU(struct NdbThread *pThread) {
   new_affinity.Mask = pThread->oldProcessorMask;
   new_affinity.Group = pThread->oldProcessorGroupNumber;
 
-  pThread->cpu_set_key = NULL;
+  pThread->cpu_set_key = nullptr;
 
   const BOOL ret =
-      SetThreadGroupAffinity(pThread->thread_handle, &new_affinity, NULL);
+      SetThreadGroupAffinity(pThread->thread_handle, &new_affinity, nullptr);
   if (ret == 0) {
     // Failed to set thread group affinity
     const DWORD error_no = GetLastError();
@@ -1043,7 +1047,7 @@ int NdbThread_LockCreateCPUSet(const Uint32 *cpu_ids, Uint32 num_cpu_ids,
       (num_cpu_ids + 2 + (num_processor_groups * 2)) * sizeof(unsigned int));
   if (!cpu_set_ptr) {
     int error_no = GetLastError();
-    *cpu_set = NULL;
+    *cpu_set = nullptr;
     return error_no;
   }
   cpu_set_ptr[0] = num_cpu_ids;
@@ -1133,7 +1137,7 @@ int NdbThread_LockCreateCPUSetExclusive(const Uint32 *cpu_ids,
   /* Exclusive cpusets currently only supported on Solaris */
   (void)num_cpu_ids;
   (void)cpu_ids;
-  *cpu_set = NULL;
+  *cpu_set = nullptr;
   return EXCLUSIVE_CPU_SET_NOT_SUPPORTED_ERROR;
 }
 
@@ -1203,7 +1207,7 @@ int NdbThread_UnlockCPU(struct NdbThread *pThread) {
 #elif defined HAVE_SOLARIS_AFFINITY
   /* Solaris */
   if (pThread->first_lock_call_exclusive) {
-    ret = pset_bind(PS_NONE, P_LWPID, pThread->tid, NULL);
+    ret = pset_bind(PS_NONE, P_LWPID, pThread->tid, nullptr);
     if (ret) {
       error_no = errno;
     } else {
@@ -1217,10 +1221,10 @@ int NdbThread_UnlockCPU(struct NdbThread *pThread) {
     uint_t flags = PA_CLEAR;
     setprocset(&ps, POP_AND, P_PID, P_MYID, P_LWPID, pThread->tid);
 
-    ret = processor_affinity(&ps, NULL, NULL, &flags);
+    ret = processor_affinity(&ps, nullptr, nullptr, &flags);
 #else
     /* Solaris older than 11.2 */
-    ret = processor_bind(P_LWPID, pThread->tid, PBIND_NONE, NULL);
+    ret = processor_bind(P_LWPID, pThread->tid, PBIND_NONE, nullptr);
 #endif
     if (ret) {
       error_no = errno;
@@ -1296,7 +1300,7 @@ int NdbThread_LockCPU(struct NdbThread *pThread, Uint32 cpu_id,
   if (ret) {
     return ret;
   }
-  ret = processor_bind(P_LWPID, pThread->tid, cpu_id, NULL);
+  ret = processor_bind(P_LWPID, pThread->tid, cpu_id, nullptr);
 #endif
   if (ret) {
     error_no = errno;
@@ -1429,7 +1433,7 @@ int NdbThread_LockCreateCPUSet(const Uint32 *cpu_ids, Uint32 num_cpu_ids,
   id_t *cpu_set_ptr = (id_t *)malloc((num_cpu_ids + 1) * sizeof(id_t));
   if (!cpu_set_ptr) {
     error_no = errno;
-    *cpu_set = NULL;
+    *cpu_set = nullptr;
     return error_no;
   }
   cpu_set_ptr[0] = (id_t)num_cpu_ids;
@@ -1442,7 +1446,7 @@ int NdbThread_LockCreateCPUSet(const Uint32 *cpu_ids, Uint32 num_cpu_ids,
   /* Non-supported OSs */
   (void)num_cpu_ids;
   (void)cpu_ids;
-  *cpu_set = NULL;
+  *cpu_set = nullptr;
   return NON_EXCLUSIVE_CPU_SET_NOT_SUPPORTED_ERROR;
 #endif
 }
@@ -1468,7 +1472,7 @@ int NdbThread_LockCreateCPUSetExclusive(const Uint32 *cpu_ids,
   }
 
   for (i = 0; i < num_cpu_ids; i++) {
-    if ((ret = pset_assign(*cpu_set_ptr, cpu_ids[i], NULL))) {
+    if ((ret = pset_assign(*cpu_set_ptr, cpu_ids[i], nullptr))) {
       error_no = errno;
       goto late_error;
     }
@@ -1481,7 +1485,7 @@ late_error:
 error:
   free(cpu_set_ptr);
 end_error:
-  *cpu_set = NULL;
+  *cpu_set = nullptr;
   return error_no;
 
 #else
@@ -1516,7 +1520,7 @@ int NdbThread_LockCPUSetExclusive(
   cpu_set_ptr = (psetid_t *)ndb_cpu_set;
 
   /* Lock against Solaris processor set */
-  ret = pset_bind(*cpu_set_ptr, P_LWPID, pThread->tid, NULL);
+  ret = pset_bind(*cpu_set_ptr, P_LWPID, pThread->tid, nullptr);
   if (ret) {
     error_no = errno;
   }
@@ -1618,7 +1622,7 @@ int NdbThread_Init() {
   uint32_t flags = PA_QUERY;
   procset_t ps;
   setprocset(&ps, POP_AND, P_PID, P_MYID, P_LWPID, thr_self());
-  if (processor_affinity(&ps, &g_num_ids, NULL, &flags) == 0) {
+  if (processor_affinity(&ps, &g_num_ids, nullptr, &flags) == 0) {
     if (g_num_ids != 0) {
       flags = PA_QUERY;
       g_cpu_ids = (id_t *)calloc(g_num_ids, sizeof(id_t));
@@ -1649,6 +1653,9 @@ void NdbThread_End() {
   }
 
   if (g_main_thread) {
+#ifdef NDB_MUTEX_DEADLOCK_DETECTOR
+    ndb_mutex_thread_exit(g_main_thread->m_mutex_thr_state);
+#endif
     free(g_main_thread);
     g_main_thread = nullptr;
   }

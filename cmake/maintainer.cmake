@@ -1,15 +1,16 @@
-# Copyright (c) 2010, 2023, Oracle and/or its affiliates.
+# Copyright (c) 2010, 2024, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
 # as published by the Free Software Foundation.
 #
-# This program is also distributed with certain software (including
+# This program is designed to work with certain software (including
 # but not limited to OpenSSL) that is licensed under separate terms,
 # as designated in a particular file or component or in included license
 # documentation.  The authors of MySQL hereby grant you an additional
 # permission to link the program and your derivative works with the
-# separately licensed software that they have included with MySQL.
+# separately licensed software that they have either included with
+# the program or referenced in the documentation.
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -34,18 +35,18 @@ MACRO(MY_ADD_CXX_WARNING_FLAG WARNING_FLAG)
   ENDIF()
 ENDMACRO()
 
+MACRO(DISABLE_DOCUMENTATION_WARNINGS)
+  STRING(REPLACE "-Wdocumentation" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+  STRING(REPLACE "-Wdocumentation" "" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
+ENDMACRO()
+
 #
 # Common flags for all versions/compilers
 #
 
 # Common warning flags for GCC, G++, Clang and Clang++
 SET(MY_WARNING_FLAGS
-    "-Wall -Wextra -Wformat-security -Wvla -Wundef")
-
-# Gives spurious warnings on 32-bit; see GCC bug 81890.
-IF(SIZEOF_VOIDP EQUAL 8)
-  STRING_APPEND(MY_WARNING_FLAGS " -Wmissing-format-attribute")
-ENDIF()
+  "-Wall -Wextra -Wformat-security -Wvla -Wundef -Wmissing-format-attribute")
 
 # Clang 6.0 and newer on Windows treat -Wall as -Weverything; use /W4 instead
 IF(WIN32_CLANG)
@@ -65,18 +66,18 @@ IF(MY_COMPILER_IS_GNU)
   # This is included in -Wall on some platforms, enable it explicitly.
   MY_ADD_C_WARNING_FLAG("Wstringop-truncation")
   MY_ADD_CXX_WARNING_FLAG("Wstringop-truncation")
-  IF(NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9)
-    # GCC 8 has bugs with "final".
 
-    # Disable this flag for PXC. Codership's wsrep-lib part and wsrep server
-    # hooks are not compatible with this flag. This causes errors during
-    # compilation of server part and storage engines including wsrep-lib and 
-    # wsrep hooks headers.
-    # Enable it back when wsrep-lib part is fixed. Disabled for now instead of
-    # fixing wsrep-lib to make next upstream merges easier.
- 
-    # MY_ADD_CXX_WARNING_FLAG("Wsuggest-override")
-  ENDIF()
+  # GCC 8 has bugs with "final".
+
+  # Disable "suggest-override" flag for PXC. Codership's wsrep-lib part and wsrep server
+  # hooks are not compatible with this flag. This causes errors during
+  # compilation of server part and storage engines including wsrep-lib and
+  # wsrep hooks headers.
+  # Enable it back when wsrep-lib part is fixed. Disabled for now instead of
+  # fixing wsrep-lib to make next upstream merges easier.
+
+  # MY_ADD_CXX_WARNING_FLAG("Wsuggest-override")
+
   MY_ADD_C_WARNING_FLAG("Wmissing-include-dirs")
   MY_ADD_CXX_WARNING_FLAG("Wmissing-include-dirs")
 
@@ -92,7 +93,7 @@ IF(MY_COMPILER_IS_GNU)
   MY_ADD_CXX_WARNING_FLAG("Wlogical-op")
 ENDIF()
 
-# Extra warning flags for Clang
+# Extra warning flags for Clang/Clang++
 IF(MY_COMPILER_IS_CLANG)
   STRING_APPEND(MY_C_WARNING_FLAGS " -Wconditional-uninitialized")
   STRING_APPEND(MY_C_WARNING_FLAGS " -Wextra-semi")
@@ -100,10 +101,24 @@ IF(MY_COMPILER_IS_CLANG)
 
   MY_ADD_C_WARNING_FLAG("Wunreachable-code-break")
   MY_ADD_C_WARNING_FLAG("Wunreachable-code-return")
-ENDIF()
+  MY_ADD_C_WARNING_FLAG("Wstring-concatenation")
 
-# Extra warning flags for Clang++
-IF(MY_COMPILER_IS_CLANG)
+  IF(CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL 11)
+    # require clang-11 or later when enabling -Wdocumentation to workaround
+    #
+    # https://bugs.llvm.org/show_bug.cgi?id=38905
+    # Disable for PXC.
+    # Server includes wsrep-lib headers (like server_state.hpp) that have
+    # documentation issues.
+    # wsrep-API headers have the same problem. However, if we disable Wdocumentation
+    # warning here, there is no need for disabling it in wsrep-lib or galera cmake
+    # MY_ADD_C_WARNING_FLAG("Wdocumentation")
+
+    # -Wdocumentation enables -Wdocumentation-deprecated-sync
+    # which currently raises to many warnings
+    MY_ADD_C_WARNING_FLAG("Wno-documentation-deprecated-sync")
+  ENDIF()
+
   # Disable a few default Clang++ warnings
   STRING_APPEND(MY_CXX_WARNING_FLAGS " -Wno-null-conversion")
   STRING_APPEND(MY_CXX_WARNING_FLAGS " -Wno-unused-private-field")
@@ -126,16 +141,34 @@ IF(MY_COMPILER_IS_CLANG)
      STRING_APPEND(MY_CXX_WARNING_FLAGS " -Wno-shorten-64-to-32")
   ENDIF()
 
+  # Suppress warnings for clang-18 or newer
+  IF(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 18)
+    STRING_APPEND(MY_CXX_WARNING_FLAGS " -Wno-deprecated-declarations")
+  ENDIF()
+
   STRING_APPEND(MY_CXX_WARNING_FLAGS " -Wextra-semi")
   STRING_APPEND(MY_CXX_WARNING_FLAGS " -Wheader-hygiene")
   STRING_APPEND(MY_CXX_WARNING_FLAGS " -Wnon-virtual-dtor")
   STRING_APPEND(MY_CXX_WARNING_FLAGS " -Wundefined-reinterpret-cast")
   STRING_APPEND(MY_CXX_WARNING_FLAGS " -Wrange-loop-analysis")
 
-  # Disable for PXC. See GCC part above for detailed explanation.
   MY_ADD_CXX_WARNING_FLAG("Winconsistent-missing-destructor-override")
   MY_ADD_CXX_WARNING_FLAG("Winconsistent-missing-override")
   MY_ADD_CXX_WARNING_FLAG("Wshadow-field")
+  MY_ADD_CXX_WARNING_FLAG("Wstring-concatenation")
+
+  # require clang-11 or later when enabling -Wdocumentation to workaround
+  #
+  # https://bugs.llvm.org/show_bug.cgi?id=38905  
+  # Disable for PXC.
+  # Server includes wsrep-lib headers (like server_state.hpp) that have
+  # documentation issues.
+  # wsrep-API headers have the same problem. However, if we disable Wdocumentation
+  # warning here, there is no need for disabling it in wsrep-lib or galera cmake
+  # MY_ADD_CXX_WARNING_FLAG("Wdocumentation")
+  # -Wdocumentation enables -Wdocumentation-deprecated-sync
+  # which currently raises to many warnings
+  MY_ADD_CXX_WARNING_FLAG("Wno-documentation-deprecated-sync")
 
   # Other possible options that give warnings (Clang 6.0):
   # -Wabstract-vbase-init
@@ -148,7 +181,6 @@ IF(MY_COMPILER_IS_CLANG)
   # -Wcovered-switch-default
   # -Wdeprecated-dynamic-exception-spec
   # -Wdisabled-macro-expansion
-  # -Wdocumentation
   # -Wdocumentation-pedantic
   # -Wdocumentation-unknown-command
   # -Wdouble-promotion
@@ -213,9 +245,9 @@ IF(MY_COMPILER_IS_GNU_OR_CLANG)
 ENDIF()
 
 MACRO(ADD_WSHADOW_WARNING)
-  IF(MY_COMPILER_IS_GNU AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7)
+  IF(MY_COMPILER_IS_GNU)
     ADD_COMPILE_OPTIONS("-Wshadow=local")
-  ELSEIF(MY_COMPILER_IS_CLANG AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5)
+  ELSEIF(MY_COMPILER_IS_CLANG)
     # added in clang-5.0
     ADD_COMPILE_OPTIONS("-Wshadow-uncaptured-local")
   ENDIF()

@@ -1,16 +1,17 @@
 /* QQ: TODO multi-pinbox */
-/* Copyright (c) 2006, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2006, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    Without limiting anything contained in the foregoing, this file,
    which is part of C Driver for MySQL (Connector/C), is also subject to the
@@ -195,8 +196,7 @@ LF_PINS *lf_pinbox_get_pins(LF_PINBOX *pinbox) {
     el = (LF_PINS *)lf_dynarray_value(&pinbox->pinarray, pins);
     next = el->link;
   } while (!pinbox->pinstack_top_ver.compare_exchange_strong(
-      top_ver,
-      top_ver - pins + next + LF_PINBOX_MAX_PINS));
+      top_ver, top_ver - pins + next + LF_PINBOX_MAX_PINS));
   /*
     set el->link to the index of el in the dynarray (el->link has two usages:
     - if element is allocated, it's its own index
@@ -246,8 +246,7 @@ void lf_pinbox_put_pins(LF_PINS *pins) {
   do {
     pins->link = top_ver % LF_PINBOX_MAX_PINS;
   } while (!pinbox->pinstack_top_ver.compare_exchange_strong(
-      top_ver,
-      top_ver - pins->link + nr + LF_PINBOX_MAX_PINS));
+      top_ver, top_ver - pins->link + nr + LF_PINBOX_MAX_PINS));
 }
 
 /*

@@ -1,15 +1,16 @@
-/* Copyright (c) 2014, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -26,6 +27,7 @@
 
 #include <string.h>
 #include <algorithm>
+#include <memory>
 #include <optional>
 #include <string>
 #include <type_traits>
@@ -39,15 +41,18 @@
 #include "my_compare.h"
 #include "my_compiler.h"
 #include "my_dbug.h"
-#include "my_loglevel.h"
 #include "my_macros.h"
 #include "mysql/components/services/bits/psi_bits.h"
 #include "mysql/components/services/log_builtins.h"
 #include "mysql/components/services/log_shared.h"
+#include "mysql/my_loglevel.h"
 #include "mysql/plugin.h"
+#include "mysql/strings/dtoa.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysql/udf_registration_types.h"
 #include "mysql_com.h"
 #include "mysqld_error.h"
+#include "sql/aggregated_stats.h"
 #include "sql/dd/collection.h"
 #include "sql/dd/dd_table.h"       // dd::FIELD_NAME_SEPARATOR_CHAR
 #include "sql/dd/dd_tablespace.h"  // dd::get_tablespace_name
@@ -71,6 +76,7 @@
 #include "sql/field.h"
 #include "sql/gis/srid.h"
 #include "sql/handler.h"
+#include "sql/histograms/table_histograms.h"
 #include "sql/key.h"
 #include "sql/log.h"
 #include "sql/partition_element.h"  // partition_element
@@ -92,9 +98,7 @@
 #include "sql/thd_raii.h"
 #include "typelib.h"
 
-namespace histograms {
-class Histogram;
-}  // namespace histograms
+extern struct aggregated_stats global_aggregated_stats;
 
 enum_field_types dd_get_old_field_type(dd::enum_column_types type) {
   switch (type) {
@@ -268,14 +272,16 @@ static bool prepare_share(THD *thd, TABLE_SHARE *share,
   share->system =
       ((share->max_rows == 1) && (share->min_rows == 1) && (share->keys == 0));
 
-  bool use_extended_sk = ha_check_storage_engine_flag(
+  const bool use_extended_sk = ha_check_storage_engine_flag(
       share->db_type(), HTON_SUPPORTS_EXTENDED_KEYS);
 
-  share->m_histograms =
-      new malloc_unordered_map<uint, const histograms::Histogram *>(
-          PSI_INSTRUMENT_ME);
-
   // Setup other fields =====================================================
+
+  if (share->tmp_table == NO_TMP_TABLE && share->is_primary_engine()) {
+    share->m_histograms = new (&share->mem_root) Table_histograms_collection();
+    if (share->m_histograms == nullptr) return true;  // OOM.
+  }
+
   /* Allocate handler */
   if (!(handler_file = get_new_handler(share, (share->m_part_info != nullptr),
                                        &share->mem_root, share->db_type()))) {
@@ -308,7 +314,7 @@ static bool prepare_share(THD *thd, TABLE_SHARE *share,
     else
       share->primary_key = MAX_KEY;
 
-    longlong ha_option = handler_file->ha_table_flags();
+    const longlong ha_option = handler_file->ha_table_flags();
     keyinfo = share->key_info;
     key_part = keyinfo->key_part;
 
@@ -496,7 +502,7 @@ static bool prepare_share(THD *thd, TABLE_SHARE *share,
       share->primary_key = MAX_KEY;  // we do not have a primary key
   } else
     share->primary_key = MAX_KEY;
-  destroy(handler_file);
+  ::destroy_at(handler_file);
 
   if (share->found_next_number_field) {
     Field *reg_field = *share->found_next_number_field;
@@ -721,7 +727,7 @@ static bool fill_share_from_dd(THD *thd, TABLE_SHARE *share,
   if (fill_tablespace_from_dd(thd, share, tab_obj)) return true;
 
   // Read comment
-  dd::String_type comment = tab_obj->comment();
+  const dd::String_type comment = tab_obj->comment();
   if (comment.length()) {
     share->comment.str =
         strmake_root(&share->mem_root, comment.c_str(), comment.length() + 1);
@@ -839,7 +845,7 @@ static Field *make_field(const dd::Column &col_obj, const CHARSET_INFO *charset,
     //
     // Allocate space for interval (column elements)
     //
-    size_t interval_parts = col_obj.elements_count();
+    const size_t interval_parts = col_obj.elements_count();
 
     interval = (TYPELIB *)share->mem_root.Alloc(sizeof(TYPELIB));
     interval->type_names = (const char **)share->mem_root.Alloc(
@@ -867,7 +873,7 @@ static Field *make_field(const dd::Column &col_obj, const CHARSET_INFO *charset,
 
   // Column name
   char *name = nullptr;
-  dd::String_type s = col_obj.name();
+  const dd::String_type s = col_obj.name();
   assert(!s.empty());
   name = strmake_root(&share->mem_root, s.c_str(), s.length());
   name[s.length()] = '\0';
@@ -925,7 +931,7 @@ static bool fill_column_from_dd(THD *thd, TABLE_SHARE *share,
   //
 
   // Column name
-  dd::String_type s = col_obj->name();
+  const dd::String_type s = col_obj->name();
   assert(!s.empty());
   name = strmake_root(&share->mem_root, s.c_str(), s.length());
   name[s.length()] = '\0';
@@ -985,7 +991,7 @@ static bool fill_column_from_dd(THD *thd, TABLE_SHARE *share,
     //
     // Allocate space for interval (column elements)
     //
-    size_t interval_parts = col_obj->elements_count();
+    const size_t interval_parts = col_obj->elements_count();
 
     interval = (TYPELIB *)share->mem_root.Alloc(sizeof(TYPELIB));
     interval->type_names = (const char **)share->mem_root.Alloc(
@@ -1027,7 +1033,7 @@ static bool fill_column_from_dd(THD *thd, TABLE_SHARE *share,
     gcol_info->set_field_stored(!col_obj->is_virtual());
 
     // Read generation expression.
-    dd::String_type gc_expr = col_obj->generation_expression();
+    const dd::String_type gc_expr = col_obj->generation_expression();
 
     /*
       Place the expression's text into the TABLE_SHARE. Field objects of
@@ -1051,7 +1057,7 @@ static bool fill_column_from_dd(THD *thd, TABLE_SHARE *share,
     default_val_expr->set_field_stored(true);
 
     // Read generation expression.
-    dd::String_type default_val_expr_str = col_obj->default_option();
+    const dd::String_type default_val_expr_str = col_obj->default_option();
 
     // Copy the expression's text into reg_field which is stored on TABLE_SHARE.
     default_val_expr->dup_expr_str(&share->mem_root,
@@ -1120,7 +1126,7 @@ static bool fill_column_from_dd(THD *thd, TABLE_SHARE *share,
   }
 
   // Comments
-  dd::String_type comment = col_obj->comment();
+  const dd::String_type comment = col_obj->comment();
   reg_field->comment.length = comment.length();
   if (reg_field->comment.length) {
     reg_field->comment.str =
@@ -1154,7 +1160,7 @@ static bool fill_column_from_dd(THD *thd, TABLE_SHARE *share,
 static bool fill_columns_from_dd(THD *thd, TABLE_SHARE *share,
                                  const dd::Table *tab_obj) {
   // Allocate space for fields in TABLE_SHARE.
-  uint fields_size = ((share->fields + 1) * sizeof(Field *));
+  const uint fields_size = ((share->fields + 1) * sizeof(Field *));
   share->field = (Field **)share->mem_root.Alloc((uint)fields_size);
   memset(share->field, 0, fields_size);
   share->vfields = 0;
@@ -1185,19 +1191,20 @@ static bool fill_columns_from_dd(THD *thd, TABLE_SHARE *share,
                               rec_pos, field_nr))
         return true;
 
+      /*
+        Account for NULL bits if it's a regular column.
+        If it's a generated column, we do it below so the NULL
+        bits end up in the expected order.
+      */
+      if ((null_bit_pos += column_preamble_bits(col_obj)) > 7) {
+        null_pos++;
+        null_bit_pos -= 8;
+      }
+
       rec_pos += share->field[field_nr]->pack_length_in_rec();
     } else
       has_vgc = true;
 
-    /*
-      Virtual generated columns still need to be accounted in null bits and
-      field_nr calculations, since they reside at the normal place in record
-      preamble and TABLE_SHARE::field array.
-    */
-    if ((null_bit_pos += column_preamble_bits(col_obj)) > 7) {
-      null_pos++;
-      null_bit_pos -= 8;
-    }
     field_nr++;
   }
 
@@ -1210,8 +1217,6 @@ static bool fill_columns_from_dd(THD *thd, TABLE_SHARE *share,
         static_cast<ulong>(rec_pos - share->default_values))
       share->stored_rec_length = (rec_pos - share->default_values);
 
-    null_pos = share->default_values;
-    null_bit_pos = (share->db_create_options & HA_OPTION_PACK_RECORD) ? 0 : 1;
     field_nr = 0;
 
     for (const dd::Column *col_obj2 : tab_obj->columns()) {
@@ -1224,17 +1229,18 @@ static bool fill_columns_from_dd(THD *thd, TABLE_SHARE *share,
                                 rec_pos, field_nr))
           return true;
 
+        /*
+          Account for generated columns -- we do this separately here
+          so the NULL bits end up in the expected order.
+        */
+        if ((null_bit_pos += column_preamble_bits(col_obj2)) > 7) {
+          null_pos++;
+          null_bit_pos -= 8;
+        }
+
         rec_pos += share->field[field_nr]->pack_length_in_rec();
       }
 
-      /*
-        Account for all columns while evaluating null_pos/null_bit_pos and
-        field_nr.
-      */
-      if ((null_bit_pos += column_preamble_bits(col_obj2)) > 7) {
-        null_pos++;
-        null_bit_pos -= 8;
-      }
       field_nr++;
     }
   }
@@ -1455,7 +1461,7 @@ static bool fill_index_from_dd(THD *thd, TABLE_SHARE *share,
   }
 
   // Read comment
-  dd::String_type comment = idx_obj->comment();
+  const dd::String_type comment = idx_obj->comment();
   keyinfo->comment.length = comment.length();
 
   if (keyinfo->comment.length) {
@@ -1521,7 +1527,7 @@ static bool fill_indexes_from_dd(THD *thd, TABLE_SHARE *share,
 
   uint32 primary_key_parts = 0;
 
-  bool use_extended_sk = ha_check_storage_engine_flag(
+  const bool use_extended_sk = ha_check_storage_engine_flag(
       share->db_type(), HTON_SUPPORTS_EXTENDED_KEYS);
 
   // Count number of keys and total number of key parts in the table.
@@ -1769,7 +1775,7 @@ static bool setup_partition_from_dd(THD *thd, MEM_ROOT *mem_root,
                                     partition_element *part_elem,
                                     const dd::Partition *part_obj,
                                     bool is_subpart) {
-  dd::String_type comment = part_obj->comment();
+  const dd::String_type comment = part_obj->comment();
   if (comment.length()) {
     part_elem->part_comment = strdup_root(mem_root, comment.c_str());
     if (!part_elem->part_comment) return true;
@@ -1957,11 +1963,6 @@ static bool set_field_list(MEM_ROOT *mem_root, dd::String_type &str,
 static bool fill_partitioning_from_dd(THD *thd, TABLE_SHARE *share,
                                       const dd::Table *tab_obj) {
   if (tab_obj->partition_type() == dd::Table::PT_NONE) return false;
-
-  // The DD only has information about how the table is partitioned in
-  // the primary storage engine, so don't use this information for
-  // tables in a secondary storage engine.
-  if (share->is_secondary_engine()) return false;
 
   partition_info *part_info;
   part_info = new (&share->mem_root) partition_info;
@@ -2184,7 +2185,7 @@ static bool fill_partitioning_from_dd(THD *thd, TABLE_SHARE *share,
 
   // Turn off ANSI_QUOTES and other SQL modes which affect printing of
   // generated partitioning clause.
-  Sql_mode_parse_guard parse_guard(thd);
+  const Sql_mode_parse_guard parse_guard(thd);
 
   buf = generate_partition_syntax(part_info, &buf_len, true, true, false,
                                   nullptr);
@@ -2378,6 +2379,7 @@ bool open_table_def(THD *thd, TABLE_SHARE *share, const dd::Table &table_def) {
   if (!error) {
     share->table_category = get_table_category(share->db, share->table_name);
     thd->status_var.opened_shares++;
+    global_aggregated_stats.get_shard(thd->thread_id()).opened_shares++;
     return false;
   }
   return true;
@@ -2401,7 +2403,7 @@ bool open_table_def_suppress_invalid_meta_data(THD *thd, TABLE_SHARE *share,
                                                const dd::Table &table_def) {
   Open_table_error_handler error_handler;
   thd->push_internal_handler(&error_handler);
-  bool error = open_table_def(thd, share, table_def);
+  const bool error = open_table_def(thd, share, table_def);
   thd->pop_internal_handler();
   return error;
 }

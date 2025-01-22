@@ -1,16 +1,17 @@
 /*
- Copyright (c) 2013, 2023, Oracle and/or its affiliates.
+ Copyright (c) 2013, 2024, Oracle and/or its affiliates.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
  as published by the Free Software Foundation.
 
- This program is also distributed with certain software (including
+ This program is designed to work with certain software (including
  but not limited to OpenSSL) that is licensed under separate terms,
  as designated in a particular file or component or in included license
  documentation.  The authors of MySQL hereby grant you an additional
  permission to link the program and your derivative works with the
- separately licensed software that they have included with MySQL.
+ separately licensed software that they have either included with
+ the program or referenced in the documentation.
 
  This program is distributed in the hope that it will be useful,
  but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -36,7 +37,7 @@ template <typename C>
 class NativeDestructorCall : public NativeVoidMethodCall<C> {
  public:
   /* Constructor */
-  NativeDestructorCall<C>(const Arguments &args)
+  NativeDestructorCall(const Arguments &args)
       : NativeVoidMethodCall<C>(args, 0) {}
 
   /* Method */
@@ -59,7 +60,7 @@ class NativeVoidMethodCall_0_ : public NativeVoidMethodCall<C> {
   Method_T method;
 
   /* Constructors */
-  NativeVoidMethodCall_0_<C>(Method_T m, const Arguments &args)
+  NativeVoidMethodCall_0_(Method_T m, const Arguments &args)
       : NativeVoidMethodCall<C>(args, 0), method(m) {}
 
   /* Methods */
@@ -79,7 +80,7 @@ class NativeMethodCall_0_ : public NativeMethodCall<R, C> {
   Method_T method;
 
   /* Constructors */
-  NativeMethodCall_0_<R, C>(Method_T m, const Arguments &args)
+  NativeMethodCall_0_(Method_T m, const Arguments &args)
       : NativeMethodCall<R, C>(args, 0), method(m) {}
 
   /* Methods */
@@ -102,7 +103,7 @@ class NativeMethodCall_1_ : public NativeMethodCall<R, C>, public Call_1_<A0> {
   Method_T method;
 
   /* Constructors */
-  NativeMethodCall_1_<R, C, A0>(Method_T m, const Arguments &args)
+  NativeMethodCall_1_(Method_T m, const Arguments &args)
       : NativeMethodCall<R, C>(args, 1), Call_1_<A0>(args), method(m) {}
 
   /* Methods */
@@ -127,7 +128,7 @@ class NativeVoidMethodCall_1_ : public NativeVoidMethodCall<C>,
   Method_T method;
 
   /* Constructor */
-  NativeVoidMethodCall_1_<C, A0>(Method_T m, const Arguments &args)
+  NativeVoidMethodCall_1_(Method_T m, const Arguments &args)
       : NativeVoidMethodCall<C>(args, 1), Call_1_<A0>(args), method(m) {}
 
   /* Methods */
@@ -150,7 +151,7 @@ class NativeMethodCall_2_ : public NativeMethodCall<R, C>,
   Method_T method;
 
   /* Constructor */
-  NativeMethodCall_2_<R, C, A0, A1>(Method_T m, const Arguments &args)
+  NativeMethodCall_2_(Method_T m, const Arguments &args)
       : NativeMethodCall<R, C>(args, 2), Call_2_<A0, A1>(args), method(m) {}
 
   /* Methods */
@@ -173,7 +174,7 @@ class NativeVoidMethodCall_2_ : public NativeVoidMethodCall<C>,
   Method_T method;
 
   /* Constructor */
-  NativeVoidMethodCall_2_<C, A0, A1>(Method_T m, const Arguments &args)
+  NativeVoidMethodCall_2_(Method_T m, const Arguments &args)
       : NativeVoidMethodCall<C>(args, 2), Call_2_<A0, A1>(args), method(m) {}
 
   /* Methods */
@@ -197,7 +198,7 @@ class NativeMethodCall_3_ : public NativeMethodCall<R, C>,
   Method_T method;
 
   /* Constructor */
-  NativeMethodCall_3_<R, C, A0, A1, A2>(Method_T m, const Arguments &args)
+  NativeMethodCall_3_(Method_T m, const Arguments &args)
       : NativeMethodCall<R, C>(args, 3), Call_3_<A0, A1, A2>(args), method(m) {}
 
   /* Methods */
@@ -223,7 +224,7 @@ class NativeVoidMethodCall_3_ : public NativeVoidMethodCall<C>,
   Method_T method;
 
   /* Constructor */
-  NativeVoidMethodCall_3_<C, A0, A1, A2>(Method_T m, const Arguments &args)
+  NativeVoidMethodCall_3_(Method_T m, const Arguments &args)
       : NativeVoidMethodCall<C>(args, 3),
         Call_3_<A0, A1, A2>(args),
         method(m) {}
@@ -250,7 +251,7 @@ class NativeMethodCall_4_ : public NativeMethodCall<R, C>,
   Method_T method;
 
   /* Constructor */
-  NativeMethodCall_4_<R, C, A0, A1, A2, A3>(Method_T m, const Arguments &args)
+  NativeMethodCall_4_(Method_T m, const Arguments &args)
       : NativeMethodCall<R, C>(args, 4),
         Call_4_<A0, A1, A2, A3>(args),
         method(m) {}
@@ -278,7 +279,7 @@ class NativeVoidMethodCall_4_ : public NativeVoidMethodCall<C>,
   Method_T method;
 
   /* Constructor */
-  NativeVoidMethodCall_4_<C, A0, A1, A2, A3>(Method_T m, const Arguments &args)
+  NativeVoidMethodCall_4_(Method_T m, const Arguments &args)
       : NativeVoidMethodCall<C>(args, 4),
         Call_4_<A0, A1, A2, A3>(args),
         method(m) {}
@@ -305,8 +306,7 @@ class NativeMethodCall_5_ : public NativeMethodCall<R, C>,
   Method_T method;
 
   /* Constructor */
-  NativeMethodCall_5_<R, C, A0, A1, A2, A3, A4>(Method_T m,
-                                                const Arguments &args)
+  NativeMethodCall_5_(Method_T m, const Arguments &args)
       : NativeMethodCall<R, C>(args, 5),
         Call_5_<A0, A1, A2, A3, A4>(args),
         method(m) {}
@@ -337,8 +337,7 @@ class NativeMethodCall_6_ : public NativeMethodCall<R, C>,
   Method_T method;
 
   /* Constructor */
-  NativeMethodCall_6_<R, C, A0, A1, A2, A3, A4, A5>(Method_T m,
-                                                    const Arguments &args)
+  NativeMethodCall_6_(Method_T m, const Arguments &args)
       : NativeMethodCall<R, C>(args, 6),
         Call_6_<A0, A1, A2, A3, A4, A5>(args),
         method(m) {}
@@ -370,8 +369,7 @@ class NativeMethodCall_7_ : public NativeMethodCall<R, C>,
   Method_T method;
 
   /* Constructor */
-  NativeMethodCall_7_<R, C, A0, A1, A2, A3, A4, A5, A6>(Method_T m,
-                                                        const Arguments &args)
+  NativeMethodCall_7_(Method_T m, const Arguments &args)
       : NativeMethodCall<R, C>(args, 7),
         Call_7_<A0, A1, A2, A3, A4, A5, A6>(args),
         method(m) {}
@@ -404,8 +402,7 @@ class NativeMethodCall_8_ : public NativeMethodCall<R, C>,
   Method_T method;
 
   /* Constructor */
-  NativeMethodCall_8_<R, C, A0, A1, A2, A3, A4, A5, A6, A7>(
-      Method_T m, const Arguments &args)
+  NativeMethodCall_8_(Method_T m, const Arguments &args)
       : NativeMethodCall<C, R>(args, 8),
         Call_8_<A0, A1, A2, A3, A4, A5, A6, A7>(args),
         method(m) {}
@@ -438,7 +435,7 @@ class NativeConstMethodCall_0_ : public NativeMethodCall<R, C> {
   Method_T method;
 
   /* Constructors */
-  NativeConstMethodCall_0_<R, C>(Method_T m, const Arguments &args)
+  NativeConstMethodCall_0_(Method_T m, const Arguments &args)
       : NativeMethodCall<R, C>(args, 0), method(m) {}
 
   /* Methods */
@@ -461,7 +458,7 @@ class NativeConstMethodCall_1_ : public NativeMethodCall<R, C>,
   Method_T method;
 
   /* Constructors */
-  NativeConstMethodCall_1_<R, C, A0>(Method_T m, const Arguments &args)
+  NativeConstMethodCall_1_(Method_T m, const Arguments &args)
       : NativeMethodCall<R, C>(args, 1), Call_1_<A0>(args), method(m) {}
 
   /* Methods */
@@ -483,7 +480,7 @@ class NativeVoidConstMethodCall_2_ : public NativeVoidMethodCall<C>,
   Method_T method;
 
   /* Constructor */
-  NativeVoidConstMethodCall_2_<C, A0, A1>(Method_T m, const Arguments &args)
+  NativeVoidConstMethodCall_2_(Method_T m, const Arguments &args)
       : NativeVoidMethodCall<C>(args, 2), Call_2_<A0, A1>(args), method(m) {}
 
   /* Methods */
@@ -505,7 +502,7 @@ class NativeConstMethodCall_2_ : public NativeMethodCall<R, C>,
   Method_T method;
 
   /* Constructor */
-  NativeConstMethodCall_2_<R, C, A0, A1>(Method_T m, const Arguments &args)
+  NativeConstMethodCall_2_(Method_T m, const Arguments &args)
       : NativeMethodCall<R, C>(args, 2), Call_2_<A0, A1>(args), method(m) {}
 
   /* Methods */

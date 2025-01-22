@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2010, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2010, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -33,7 +34,7 @@
 EventLogHandler::EventLogHandler(const char *source_name)
     : LogHandler(),
       m_source_name(source_name),
-      m_event_source(NULL),
+      m_event_source(nullptr),
       m_level(Logger::LL_ERROR) {}
 
 EventLogHandler::~EventLogHandler() { close(); }
@@ -51,14 +52,14 @@ static bool check_message_resource(void) {
   if (FormatMessage(
           FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_HMODULE |
               FORMAT_MESSAGE_IGNORE_INSERTS,
-          NULL, MSG_EVENTLOG, NULL, (LPTSTR)&message_text, 0, NULL) != 0) {
+          nullptr, MSG_EVENTLOG, 0, (LPTSTR)&message_text, 0, nullptr) != 0) {
     LocalFree(message_text);
     return true;
   }
 
   // Could not get message from own module, extract error
   // message from system and print it to help debugging
-  DWORD last_err = GetLastError();
+  const DWORD last_err = GetLastError();
   fprintf(stderr,
           "This program does not seem to have the message resource "
           "required for logging to Windows event log, error: %lu ",
@@ -66,7 +67,7 @@ static bool check_message_resource(void) {
   if (FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM |
                         FORMAT_MESSAGE_ALLOCATE_BUFFER |
                         FORMAT_MESSAGE_IGNORE_INSERTS,
-                    NULL, last_err, 0, (LPSTR)&message_text, 0, NULL)) {
+                    nullptr, last_err, 0, (LPSTR)&message_text, 0, nullptr)) {
     fprintf(stderr, "message: '%s'\n", message_text);
     LocalFree(message_text);
   } else {
@@ -115,7 +116,7 @@ static bool setup_eventlogging(const char *source_name) {
 
   /* Get path of current module and use it as message resource  */
   char module_path[MAX_PATH];
-  DWORD len = GetModuleFileName(NULL, module_path, sizeof(module_path));
+  DWORD len = GetModuleFileName(nullptr, module_path, sizeof(module_path));
   if (len == 0 || len == sizeof(module_path)) {
     fprintf(stderr,
             "Could not extract path of module, module_len: %lu, error: %lu\n",
@@ -143,7 +144,7 @@ bool EventLogHandler::open() {
     return false;
   }
 
-  m_event_source = RegisterEventSource(NULL, m_source_name);
+  m_event_source = RegisterEventSource(nullptr, m_source_name);
   if (!m_event_source) {
     fprintf(stderr, "Failed to register event source, error: %lu\n",
             GetLastError());
@@ -160,7 +161,7 @@ bool EventLogHandler::close() {
   return true;
 }
 
-bool EventLogHandler::is_open() { return (m_event_source != NULL); }
+bool EventLogHandler::is_open() { return (m_event_source != nullptr); }
 
 void EventLogHandler::writeHeader(const char *, Logger::LoggerLevel level,
                                   time_t) {
@@ -191,8 +192,8 @@ static bool write_event_log(HANDLE eventlog_handle, Logger::LoggerLevel level,
       return false;
   }
 
-  if (!ReportEvent(eventlog_handle, type, 0, MSG_EVENTLOG, NULL, 1, 0, &msg,
-                   NULL)) {
+  if (!ReportEvent(eventlog_handle, type, 0, MSG_EVENTLOG, nullptr, 1, 0, &msg,
+                   nullptr)) {
     return false;
   }
 
@@ -227,7 +228,7 @@ int EventLogHandler::printf(Logger::LoggerLevel level, const char *source_name,
   int ret = vsnprintf_s(buf, sizeof(buf), _TRUNCATE, msg, ap);
   va_end(ap);
 
-  HANDLE eventlog_handle = RegisterEventSource(NULL, source_name);
+  HANDLE eventlog_handle = RegisterEventSource(nullptr, source_name);
   if (!eventlog_handle) {
     // Failed to open event log
     return -2;

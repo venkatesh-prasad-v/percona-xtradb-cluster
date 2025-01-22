@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -1365,7 +1366,7 @@ class Ndb {
    * pollEvents2 will also return >0 when there is an event data
    * representing empty or error epoch available on the head of the event queue.
    */
-  int pollEvents2(int aMillisecondNumber, Uint64 *highestQueuedEpoch = 0);
+  int pollEvents2(int aMillisecondNumber, Uint64 *highestQueuedEpoch = nullptr);
 
   /**
    * Check if higher queued epochs have been seen by the last
@@ -1415,7 +1416,7 @@ class Ndb {
    * - removes empty epochs from the event queue head until a regular
    *   event data is found or the whole queue is processed.
    */
-  int pollEvents(int aMillisecondNumber, Uint64 *latestGCI = 0);
+  int pollEvents(int aMillisecondNumber, Uint64 *latestGCI = nullptr);
 
   /**
    * Returns the event operation associated with the dequeued
@@ -1548,7 +1549,7 @@ class Ndb {
 
 #ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
   int flushIncompleteEvents(Uint64 gci);
-  NdbEventOperation *getEventOperation(NdbEventOperation *eventOp = 0);
+  NdbEventOperation *getEventOperation(NdbEventOperation *eventOp = nullptr);
   Uint64 getLatestGCI();
   void forceGCP();
   void setReportThreshEventGCISlip(unsigned thresh);
@@ -1583,8 +1584,9 @@ class Ndb {
    *
    * @return NdbTransaction object, or NULL on failure.
    */
-  NdbTransaction *startTransaction(const NdbDictionary::Table *table = 0,
-                                   const char *keyData = 0, Uint32 keyLen = 0);
+  NdbTransaction *startTransaction(const NdbDictionary::Table *table = nullptr,
+                                   const char *keyData = nullptr,
+                                   Uint32 keyLen = 0);
 
   /**
    * Structure for passing in pointers to distribution key values
@@ -1707,7 +1709,8 @@ class Ndb {
    */
   NdbTransaction *startTransaction(const NdbDictionary::Table *table,
                                    const struct Key_part_ptr *keyData,
-                                   void *xfrmbuf = 0, Uint32 xfrmbuflen = 0);
+                                   void *xfrmbuf = nullptr,
+                                   Uint32 xfrmbuflen = 0);
 #ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
   /**
    * Unlike startTransaction function above, this function will not try to
@@ -1759,8 +1762,8 @@ class Ndb {
    */
   static int computeHash(Uint32 *hashvalueptr,
                          const NdbDictionary::Table *table,
-                         const struct Key_part_ptr *keyData, void *xfrmbuf = 0,
-                         Uint32 xfrmbuflen = 0);
+                         const struct Key_part_ptr *keyData,
+                         void *xfrmbuf = nullptr, Uint32 xfrmbuflen = 0);
 #ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
   /**
    * Unlike computeHash function above, this function will not try to allocate
@@ -2081,6 +2084,9 @@ class Ndb {
 
   Uint64 getClientStat(Uint32 id) const;
   const char *getClientStatName(Uint32 id) const;
+
+  // Set optimized node selection value for this object
+  void set_optimized_node_selection(int val);
 #endif
 
  private:
@@ -2142,7 +2148,7 @@ class Ndb {
   Uint32 insert_sent_list(NdbTransaction *);
 
   int sendRecSignal(Uint16 aNodeId, Uint32 aWaitState, NdbApiSignal *aSignal,
-                    Uint32 nodeSequence, Uint32 *ret_conn_seq = 0);
+                    Uint32 nodeSequence, Uint32 *ret_conn_seq = nullptr);
 
   // Get block number of this NDBAPI object
   int getBlockNumber();

@@ -5,9 +5,16 @@
 # Separate the test case name and the comment with ':'.
 #   <suite>.<test> [@platform|@!platform] : <BUG|WL>#<XXXX> [<comment>]
 #
+# You can also include a disabled file into another using the @import keyword
+# as following:
+#
+# @import <disabled_file>
+#
 # Note:
 #   - Do not use any TAB characters for whitespace.
 #   - Length of a comment section must not be more than 80 characters.
+#   - <disabled_file> could be the file name or a valid path. It should
+#     not be followed by a comment on that line.
 #
 ##############################################################################
 
@@ -21,8 +28,8 @@ audit_null.audit_plugin_bugs : BUG#28080637 Test fails consistently
 
 # binlog suite tests
 binlog.binlog_mysqlbinlog_rewrite_db @windows     : BUG#26717205 Requires a debug client binary and fails consistently.
+binlog.binlog_mysqlbinlog_4g_start_position       : BUG#0000 PS-9381 Requires too much memory/space in Jenkins
 binlog_gtid.binlog_xa_select_gtid_executed_explicitly_crash : Bug#28588717 Fails both on FreeBSD and other platforms
-binlog_nogtid.binlog_gtid_next_xa                 : BUG#33650776 Failure of XA COMMIT of prepared txn, can result in txn rollback
 # func1 suite tests
 funcs_1.is_basics_mixed @darwin  : BUG#25882809 INCORRECT RESULT WHEN USING SUBQUERY ON TOP OF VIEW.
 funcs_1.is_basics_mixed @windows : BUG#25882809 INCORRECT RESULT WHEN USING SUBQUERY ON TOP OF VIEW.
@@ -54,9 +61,10 @@ innodb.blob-crash-4k                              : BUG#3129 PXC requires 16k In
 innodb.innodb_max_recordsize                      : BUG#3129 PXC requires 16k InnoDB page size (https://jira.percona.com/browse/PXC-3129)
 innodb.instant_ddl_max_row_size                   : BUG#3129 PXC requires 16k InnoDB page size (https://jira.percona.com/browse/PXC-3129)
 innodb.instant_ddl_upgrade_rollback               : BUG#3129 PXC requires 16k InnoDB page size (https://jira.percona.com/browse/PXC-3129)
-innodb.upgrade_fts_aux                            : Bug#7904 Percona PS-7904, Bug#33034679 Test needs upgrading 5.7 data files
 innodb.instant_ddl_recovery_old                   : WL#12527 Redo format has changed - crashed_datadir.zip needs to be recreated.
-innodb.log_logical_size                           : WL#12527 Test is shaky - needs to be fixed.
+innodb.log_logical_size                           : Bug#35543413 Test is shaky - needs to be fixed.
+innodb.set_concurrency_in_readonly                : Bug#35573783 innodb.set_concurrency_in_readonly is failing in trunk
+innodb.disable_ahi_other_blocks                   : BUG#3129 PXC requires 16k InnoDB page size (https://jira.percona.com/browse/PXC-3129)
 
 # innodb_fts suite test
 innodb_fts.sync_block : BUG#2232 percona https://jira.percona.com/browse/PS-2232
@@ -76,9 +84,6 @@ innodb_undo.i_s_files_32k                         : BUG#3129 PXC requires 16k In
 # innodb_gis
 innodb_gis.gis_split_nan                          : BUG#3129 PXC requires 16k InnoDB page size (https://jira.percona.com/browse/PXC-3129)
 
-# keyring tests
-keyring_encrypted_file.keyring_migration_bugs @darwin : Bug#31041633
-
 # Tests that run ALTER on the "mysql" database
 innodb.mysql_ts_alter_encrypt_1                 : BUG#29531106 - ATTACHABLE_TRX(): ASSERTION `!M_THD->TRANSACTION_ROLLBACK_REQUEST' FAILED
 component_keyring_file.mysql_ts_alter_encrypt_1 : BUG#29531106 - ATTACHABLE_TRX(): ASSERTION `!M_THD->TRANSACTION_ROLLBACK_REQUEST' FAILED
@@ -87,11 +92,9 @@ component_keyring_file.mysql_ts_alter_encrypt_1 : BUG#29531106 - ATTACHABLE_TRX(
 # main suite tests
 main.initialize                                   : BUG#3129 PXC requires 16k InnoDB page size (https://jira.percona.com/browse/PXC-3129)
 main.ds_mrr-big @solaris                          : BUG#14168107 Test leads to timeout on Solaris on slow sparc servers.
-main.bug100352                                    : BUG#100352 https://bugs.mysql.com/bug.php?id=100352
-main.gtid_next_xa_binlog_off : BUG#33650776 Failure of XA COMMIT of prepared txn, can result in txn rollback
+main.print_stacktrace                             : Bug#36027494 Add mtr test for my_print_stacktrace
 
 # Disabled due to InnoDB issues
-main.internal_tmp_disk_storage_engine             : BUG#26917416 Disabled it since it's failing on pb2.
 
 main.events_time_zone                             : BUG#2179 percona https://jira.percona.com/browse/PS-2179
 
@@ -109,13 +112,21 @@ max_parts.partition_max_sub_parts_list_innodb @windows      : BUG#27681900 Disab
 max_parts.partition_max_sub_parts_range_innodb @windows     : BUG#27681900 Disabling max_parts tests on windows.
 max_parts.innodb_partition_open_files_limit                 : BUG#27423163 Test times out consistently on Hudson.
 
+# percona suite test
+percona.bug100352 : BUG#100352 https://bugs.mysql.com/bug.php?id=100352
+
 # perfschema suite test
 perfschema.threads_history      : BUG#27712231
-perfschema.ssl                  : BUG#30910698
 perfschema.idx_compare_events_waits_current : BUG#27865960
 perfschema.idx_compare_ews_by_thread_by_event_name : BUG#31041671
 perfschema.idx_compare_ews_by_instance : BUG#31791537
 perfschema.idx_compare_rwlock_instances : BUG#31791537
+
+# rocksdb suite tests
+rocksdb.non_blocking_manual_compaction : BUG#0000 PS-9381 Often fails in Jenkins due to races.
+
+# rocksdb_stress suite tests
+rocksdb_stress.drop_cf_stress : BUG#0000 PS-9381 Often fails in Jenkins due to races.
 
 # rpl_gtid suite tests
 rpl_gtid.rpl_async_conn_failover_restart @windows : BUG#34132168 Disabled until bug is fixed
@@ -124,17 +135,20 @@ rpl_gtid.rpl_gtid_perfschema_applier_xa_status           : BUG#27914287 Disabled
 rpl_gtid.rpl_gtid_mts_spco_deadlock_other_locks          : Bug#32499883 RPL_GTID.RPL_GTID_MTS_SPCO_DEADLOCK_OTHER_LOCKS FAILS ON PB2
 rpl_gtid.rpl_master_errors : BUG#4797 percona https://jira.percona.com/browse/PS-4797
 rpl_gtid.rpl_start_replica_until_pos_with_gtid_only      : Bug#33119241 START REPLICA UNTIL SOURCE_LOG_POS SHOULD NOT STOP ON REPLICA EVENTS
-rpl_gtid.rpl_gtid_while_super_read_only : Bug#8423 Fails on PS, even on earlier versions
 
 # rpl_nogtid suite tests
 rpl_nogtid.rpl_perfschema_applier_xa_status_check : BUG#27914287 Disabled until the WL#9075 (Performance Schema, XA Transactions) be implemented
 rpl_nogtid.rpl_semi_sync_group_commit_deadlock : BUG#80581 percona https://bugs.mysql.com/bug.php?id=80581
 rpl_nogtid.rpl_semi_sync_non_group_commit_deadlock : BUG#80581 percona https://bugs.mysql.com/bug.php?id=80581
 rpl_nogtid.rpl_binlog_format_errors               : BUG#29776083 EXPLICIT BINLOG INJECTION WITH SELF LOGGING ENGINES IS BROKEN
+rpl_nogtid.rpl_nogtid_encryption_read             : Bug#36172046 Update rpl_nogtid.rpl_nogtid_encryption_read test to not use keyring_file
 
 # rpl suite tests
 rpl.rpl_io_thd_wait_for_disk_space_stress : BUG#23581287 Disabled until bug is fixed.
 rpl.rpl_writeset_add_unique_key : Bug#33134835 RPL_WRITESET_ADD_UNIQUE_KEY FAILS SPORADICALLY
+
+# secondary_engine tests
+secondary_engine.query_preparation : BUG#36306426 Disabled until bug is fixed
 
 # sys_vars tests
 sys_vars.max_execution_time_basic @freebsd : BUG#31041720
@@ -155,60 +169,6 @@ rocksdb.allow_to_start_after_corruption : BUG#4584 PS-4584
 
 # rocksdb_rpl suite tests
 rocksdb_rpl.rpl_rocksdb_snapshot : BUG#0 LOCK BINLOG FOR BACKUP
-
-# tokudb suite tests
-tokudb.mvcc-19 : BUG#0 tokutek
-tokudb.mvcc-20 : BUG#0 tokutek
-tokudb.mvcc-27 : BUG#0 tokutek
-tokudb.storage_engine_default : BUG#0 tokudb is not the default storage engine
-
-# tokudb_alter_table suite tests
-# alter table
-tokudb_alter_table.hcad_tmp_tables : BUG#0 tmp tables bypass hot alter, we run hcad_tmp_tables_56 instead
-tokudb_alter_table.hcad_with_locks : BUG#0 can't alter table concurrent with reading a table in 5.5
-# virtual columns
-tokudb_alter_table.virtual_columns : BUG#0 no virtual columns in MySQL 5.5
-tokudb_alter_table.frm_discover_partition : BUG#0 needs the tokutek patch for frm discovery for partitioned tables
-# 8.0
-tokudb_alter_table.frm_discover : BUG#0 no .frm in 8.0
-
-# tokudb_bugs suite tests
-tokudb_bugs.2952 : BUG#0 tokutek not_5_5
-tokudb_bugs.4472 : BUG#0 #4521
-tokudb_bugs.fileops-2 : BUG#0 tokutek not_5_5
-tokudb_bugs.fileops-3 : BUG#0 tokutek not_5_5
-tokudb_bugs.fileops-4 : BUG#0 tokutek not_5_5
-tokudb_bugs.xa-2 : BUG#0 tokutek not_5_5
-tokudb_bugs.checkpoint_lock_2 : BUG#0 test can not work when the checkpoint_safe_lock is a fair rwlock
-tokudb_bugs.6053 : BUG#0 tokudb is not the default storage engine
-tokudb_bugs.1883 : BUG#0 tokutek's auto inc singleton patch missing
-tokudb_bugs.3083 : BUG#0 no patch to find_shortest_key to prefer PK over CK
-tokudb_bugs.db768 : BUG#768 https://tokutek.atlassian.net/browse/DB-768
-tokudb_bugs.dict_leak_3518 : BUG#635 https://tokutek.atlassian.net/browse/DB-635
-tokudb_bugs.1872 : BUG#750 https://tokutek.atlassian.net/browse/DB-750
-tokudb_bugs.db917 : BUG#917 https://tokutek.atlassian.net/browse/DB-917
-# 8.0
-tokudb_bugs.frm_store : BUG#0 no .frm in 8.0
-tokudb_bugs.frm_store2 : BUG#0 no .frm in 8.0
-tokudb_bugs.frm_store3 : BUG#0 no .frm in 8.0
-
-# tokudb_parts suite tests
-tokudb_parts.partition_basic_symlink_tokudb : BUG#0 tokudb_file_per_table is not supported
-tokudb_parts.partition_reorganize_tokudb : BUG#0 tokudb_file_per_table is not supported
-tokudb_parts.partition_exchange_tokudb : BUG#0 exchange partition is not supported
-tokudb_parts.partition_exch_qa_1_tokudb : BUG#0 exchange partition is not supported
-tokudb_parts.partition_exch_qa_4_tokudb : BUG#0 exchange partition is not supported
-tokudb_parts.partition_exch_qa_5_tokudb : BUG#0 exchange partition is not supported
-tokudb_parts.partition_exch_qa_7_tokudb : BUG#0 exchange partition is not supported
-tokudb_parts.partition_exch_qa_8_tokudb : BUG#0 exchange partition is not supported
-tokudb_parts.partition_exch_myisam_tokudb : BUG#0 exchange partition is not supported
-tokudb_parts.partition_exch_tokudb : BUG#0 exchange partition is not supported
-tokudb_parts.partition_mgm_lc0_tokudb : BUG#0 exchange partition is not supported
-tokudb_parts.nonflushing_analyze_debug : BUG#0 percona's test which has not yet been ported to 8.0
-tokudb_parts.partition_debug_sync_tokudb : BUG#0 the "debug-sync" code does not exist in 8.0
-tokudb_parts.partition_debug_tokudb : BUG#0 the debug code does not exist in 8.0
-
-# tokudb_rpl suite tests
 
 #--------------------------------------------------
 # Codership disabled tests begin here
@@ -278,9 +238,6 @@ galera.galera-index-online-fk : BUG#0 fk_40 triggers inconsistency voting, as it
 galera.MW-284 : BUG#0000 test is incompatible with native mysql8.0 server slave behavior (upstream)
 galera.galera_fk_lock_parent_update_child : BUG#0 Few cases have timing issues(PXC-3431) and few are invalid after PXC-3501
 
-# auth_sec
-auth_sec.wrong_keyring_file_data                                        : BUG#0 PXC needs keyring_file/keyring_vault to load without errors
-
 
 # Read only wsrep_provider & wsrep_notify_cmd
 galera.galera_ist_try_again: BUG#0 Needs dynamic wsrep_provider
@@ -304,6 +261,8 @@ galera_3nodes.galera_ist_gcache_rollover: BUG#0 Needs dynamic wsrep_provider
 group_replication.gr_join_with_suspect_member : BUG#31704262 XCOM CREATES NODES WITH PAST GHOST VIEWS
 group_replication.gr_leave_with_suspect_member : BUG#31704262 XCOM CREATES NODES WITH PAST GHOST VIEWS
 group_replication.gr_majority_loss_restored_after_timeout : BUG#31704262 XCOM CREATES NODES WITH PAST GHOST VIEWS
+group_replication.gr_primary_manual_failover_vs_dcl_rename_user : BUG#36020917 Disabled until bug is fixed
+group_replication.gr_primary_mode_group_operations_41_1 : BUG#35527247 Disabled until bug is fixed
 group_replication.gr_primary_mode_group_operations_joining_during_election @windows : BUG#33679225 Disabled until bug is fixed
 group_replication.gr_primary_mode_group_operations_net_partition_4 @windows : BUG#34673762 Disabled until bug is fixed
 group_replication.gr_suspect_member_resumes_after_crash_join_retries : BUG#32458239 GR_SUSPECT_MEMBER_RESUMES_AFTER_CRASH_JOIN_RETRIES IS NOT STABLE

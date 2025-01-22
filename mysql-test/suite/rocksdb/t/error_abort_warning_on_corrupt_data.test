@@ -4,12 +4,6 @@
 --source include/not_parallel.inc
 --source include/have_rocksdb.inc
 --source suite/rocksdb/include/have_write_committed.inc
---source include/parse_rocksdb_fs_uri.inc
-
-if (!$rocksdb_zenfs_disabled)
-{
-  --skip Test doesn't support ZenFS
-}
 
 let DATADIR_LOCATION=$MYSQLTEST_VARDIR/mysqld.1/data;
 
@@ -37,7 +31,6 @@ select * from t1;
 --remove_file $DATADIR_LOCATION/.rocksdb/ROCKSDB_CORRUPTED
 
 --exec echo "restart" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
---enable_reconnect
 let $WAIT_COUNT=6000;
 --source include/wait_time_until_connected_again.inc
 
@@ -76,7 +69,6 @@ insert into t2 (sk) values (1), (2) on duplicate key update val = val + 1;
 --remove_file $DATADIR_LOCATION/.rocksdb/ROCKSDB_CORRUPTED
 
 --exec echo "restart" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
---enable_reconnect
 let $WAIT_COUNT=6000;
 --source include/wait_time_until_connected_again.inc
 

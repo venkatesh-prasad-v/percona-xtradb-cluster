@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2008, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2008, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -57,12 +58,12 @@ static inline std::string ndb_socket_to_string(ndb_socket_t s) {
 static inline int ndb_socket_errno() { return WSAGetLastError(); }
 
 static inline std::string ndb_socket_err_message(int error_code) {
-  LPTSTR tmp_str = NULL;
+  LPTSTR tmp_str = nullptr;
   FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_ALLOCATE_BUFFER |
                     FORMAT_MESSAGE_IGNORE_INSERTS |
                     FORMAT_MESSAGE_MAX_WIDTH_MASK,
-                NULL, error_code, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-                (LPTSTR)&tmp_str, 0, NULL);
+                nullptr, error_code, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+                (LPTSTR)&tmp_str, 0, nullptr);
   std::string err_str(tmp_str);
   LocalFree(tmp_str);
   return err_str;
@@ -115,7 +116,7 @@ static inline ssize_t ndb_socket_writev(ndb_socket_t s, const struct iovec *iov,
                                         int iovcnt) {
   DWORD rv = 0;
   if (WSASend(s.s, reinterpret_cast<LPWSABUF>(const_cast<struct iovec *>(iov)),
-              iovcnt, &rv, 0, 0, 0) == SOCKET_ERROR)
+              iovcnt, &rv, 0, nullptr, nullptr) == SOCKET_ERROR)
     return -1;
   return rv;
 }

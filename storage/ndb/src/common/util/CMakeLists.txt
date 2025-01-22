@@ -1,15 +1,16 @@
-# Copyright (c) 2008, 2023, Oracle and/or its affiliates.
+# Copyright (c) 2008, 2024, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
 # as published by the Free Software Foundation.
 #
-# This program is also distributed with certain software (including
+# This program is designed to work with certain software (including
 # but not limited to OpenSSL) that is licensed under separate terms,
 # as designated in a particular file or component or in included license
 # documentation.  The authors of MySQL hereby grant you an additional
 # permission to link the program and your derivative works with the
-# separately licensed software that they have included with MySQL.
+# separately licensed software that they have either included with
+# the program or referenced in the documentation.
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -45,6 +46,7 @@ ADD_CONVENIENCE_LIBRARY(ndbgeneral
   NdbPack.cpp
   NdbSocket.cpp
   NdbSqlUtil.cpp
+  NodeCertificate.cpp
   ndb_az31.cpp
   ndb_ndbxfrm1.cpp
   ndb_openssl3_compat.cpp
@@ -60,8 +62,10 @@ ADD_CONVENIENCE_LIBRARY(ndbgeneral
   SocketAuthenticator.cpp
   SocketClient.cpp
   SocketServer.cpp
+  TlsKeyManager.cpp
   Vector.cpp
   basename.cpp
+  cstrbuf.cpp
   decimal_utils.cpp
   md5_hash.cpp
   ndb_init.cpp
@@ -75,14 +79,12 @@ ADD_CONVENIENCE_LIBRARY(ndbgeneral
   LINK_LIBRARIES ndbtrace ndbportlib ext::zlib mysys
 )
 
-# Exclude ndbgeneral_objlib from PGO on Windows to avoid linker error LNK1248
-EXCLUDE_FROM_MSVC_PGO(ndbgeneral_objlib)
-
 # Cyclic dependencies for ndbgeneral.
 SET_TARGET_PROPERTIES(ndbgeneral PROPERTIES LINK_INTERFACE_MULTIPLICITY 3)
 
 FOREACH(tests BaseString Bitmask SparseBitmask Parser HashMap2 LinkedStack
-        ndb_zlib cstrbuf span)
+    NodeCertificate
+    TlsKeyManager ndb_zlib cstrbuf span)
   NDB_ADD_TEST("${tests}-t" "${tests}.cpp" LIBS ndbgeneral)
 ENDFOREACH(tests)
 
@@ -97,6 +99,11 @@ ENDIF()
 
 NDB_ADD_TEST(ndb_version-t version.cpp LIBS ndbgeneral)
 
+SET_PROPERTY(SOURCE ndb_opts.cpp
+             PROPERTY COMPILE_DEFINITIONS
+             NDB_TLS_SEARCH_PATH="${WITH_NDB_TLS_SEARCH_PATH}")
+
+
 FOREACH(tests
     NdbPack
     mysql_utils_test
@@ -109,6 +116,8 @@ FOREACH(tests
     testProp
     testSecureSocket
     testConfigValues
+    testTlsKeyManager
+    testNdbProcess
     )
   NDB_ADD_TEST("${tests}-t" "${tests}.cpp" LIBS ndbmgmapi ndbgeneral ndbportlib)
 ENDFOREACH(tests)

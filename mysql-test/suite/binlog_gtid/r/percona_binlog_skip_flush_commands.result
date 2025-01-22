@@ -15,6 +15,7 @@ REVOKE RELOAD ON *.* FROM 'wo_reload'@'localhost';
 REVOKE FLUSH_OPTIMIZER_COSTS ON *.* FROM 'wo_reload'@'localhost';
 REVOKE FLUSH_STATUS ON *.* FROM 'wo_reload'@'localhost';
 REVOKE FLUSH_USER_RESOURCES ON *.* FROM 'wo_reload'@'localhost';
+REVOKE FLUSH_PRIVILEGES ON *.* FROM 'wo_reload'@'localhost';
 CREATE USER 'wo_super'@'localhost';
 GRANT ALL PRIVILEGES ON *.* TO 'wo_super'@'localhost';
 REVOKE SUPER ON *.* FROM 'wo_super'@'localhost';
@@ -38,7 +39,6 @@ INSERT INTO flush_statement(value) VALUES
 ('GENERAL LOGS'),
 ('SLOW LOGS'),
 ('RELAY LOGS'),
-('HOSTS'),
 ('PRIVILEGES'),
 ('STATUS'),
 ('CLIENT_STATISTICS'),
@@ -376,101 +376,12 @@ include/assert.inc [FLUSH RELAY LOGS with binlog_skip_flush_commands set to ON m
 SET GLOBAL binlog_skip_flush_commands = OFF;
 SET GLOBAL super_read_only = OFF;
 SET GLOBAL read_only = OFF;
-FLUSH HOSTS;
-ERROR 42000: Access denied; you need (at least one of) the RELOAD privilege(s) for this operation
-include/assert.inc [FLUSH HOSTS with binlog_skip_flush_commands set to OFF must not change gtid (read_only = OFF, super_read_only = OFF) (user w/o RELOAD)]
-SET GLOBAL binlog_skip_flush_commands = ON;
-FLUSH HOSTS;
-ERROR 42000: Access denied; you need (at least one of) the RELOAD privilege(s) for this operation
-include/assert.inc [FLUSH HOSTS with binlog_skip_flush_commands set to ON must not change gtid (read_only = OFF, super_read_only = OFF) (user w/o RELOAD)]
-SET GLOBAL binlog_skip_flush_commands = OFF;
-FLUSH HOSTS;
-Warnings:
-Warning	1287	'FLUSH HOSTS' is deprecated and will be removed in a future release. Please use TRUNCATE TABLE performance_schema.host_cache instead
-include/assert.inc [FLUSH HOSTS with binlog_skip_flush_commands set to OFF must change gtid (read_only = OFF, super_read_only = OFF) (user w/o SUPER)]
-SET GLOBAL binlog_skip_flush_commands = ON;
-FLUSH HOSTS;
-Warnings:
-Warning	1287	'FLUSH HOSTS' is deprecated and will be removed in a future release. Please use TRUNCATE TABLE performance_schema.host_cache instead
-include/assert.inc [FLUSH HOSTS with binlog_skip_flush_commands set to ON must not change gtid (read_only = OFF, super_read_only = OFF) (user w/o SUPER)]
-SET GLOBAL binlog_skip_flush_commands = OFF;
-FLUSH HOSTS;
-Warnings:
-Warning	1287	'FLUSH HOSTS' is deprecated and will be removed in a future release. Please use TRUNCATE TABLE performance_schema.host_cache instead
-include/assert.inc [FLUSH HOSTS with binlog_skip_flush_commands set to OFF must change gtid (read_only = OFF, super_read_only = OFF) (SUPER user)]
-SET GLOBAL binlog_skip_flush_commands = ON;
-FLUSH HOSTS;
-Warnings:
-Warning	1287	'FLUSH HOSTS' is deprecated and will be removed in a future release. Please use TRUNCATE TABLE performance_schema.host_cache instead
-include/assert.inc [FLUSH HOSTS with binlog_skip_flush_commands set to ON must not change gtid (read_only = OFF, super_read_only = OFF) (SUPER user)]
-SET GLOBAL binlog_skip_flush_commands = OFF;
-SET GLOBAL super_read_only = OFF;
-SET GLOBAL read_only = ON;
-FLUSH HOSTS;
-ERROR 42000: Access denied; you need (at least one of) the RELOAD privilege(s) for this operation
-include/assert.inc [FLUSH HOSTS with binlog_skip_flush_commands set to OFF must not change gtid (read_only = ON, super_read_only = OFF) (user w/o RELOAD)]
-SET GLOBAL binlog_skip_flush_commands = ON;
-FLUSH HOSTS;
-ERROR 42000: Access denied; you need (at least one of) the RELOAD privilege(s) for this operation
-include/assert.inc [FLUSH HOSTS with binlog_skip_flush_commands set to ON must not change gtid (read_only = ON, super_read_only = OFF) (user w/o RELOAD)]
-SET GLOBAL binlog_skip_flush_commands = OFF;
-FLUSH HOSTS;
-Warnings:
-Warning	1287	'FLUSH HOSTS' is deprecated and will be removed in a future release. Please use TRUNCATE TABLE performance_schema.host_cache instead
-include/assert.inc [FLUSH HOSTS with binlog_skip_flush_commands set to OFF must not change gtid (read_only = ON, super_read_only = OFF) (user w/o SUPER)]
-SET GLOBAL binlog_skip_flush_commands = ON;
-FLUSH HOSTS;
-Warnings:
-Warning	1287	'FLUSH HOSTS' is deprecated and will be removed in a future release. Please use TRUNCATE TABLE performance_schema.host_cache instead
-include/assert.inc [FLUSH HOSTS with binlog_skip_flush_commands set to ON must not change gtid (read_only = ON, super_read_only = OFF) (user w/o SUPER)]
-SET GLOBAL binlog_skip_flush_commands = OFF;
-FLUSH HOSTS;
-Warnings:
-Warning	1287	'FLUSH HOSTS' is deprecated and will be removed in a future release. Please use TRUNCATE TABLE performance_schema.host_cache instead
-include/assert.inc [FLUSH HOSTS with binlog_skip_flush_commands set to OFF must change gtid (read_only = ON, super_read_only = OFF) (SUPER user)]
-SET GLOBAL binlog_skip_flush_commands = ON;
-FLUSH HOSTS;
-Warnings:
-Warning	1287	'FLUSH HOSTS' is deprecated and will be removed in a future release. Please use TRUNCATE TABLE performance_schema.host_cache instead
-include/assert.inc [FLUSH HOSTS with binlog_skip_flush_commands set to ON must not change gtid (read_only = ON, super_read_only = OFF) (SUPER user)]
-SET GLOBAL binlog_skip_flush_commands = OFF;
-SET GLOBAL super_read_only = ON;
-FLUSH HOSTS;
-ERROR 42000: Access denied; you need (at least one of) the RELOAD privilege(s) for this operation
-include/assert.inc [FLUSH HOSTS with binlog_skip_flush_commands set to OFF must not change gtid (super_read_only = ON) (user w/o RELOAD)]
-SET GLOBAL binlog_skip_flush_commands = ON;
-FLUSH HOSTS;
-ERROR 42000: Access denied; you need (at least one of) the RELOAD privilege(s) for this operation
-include/assert.inc [FLUSH HOSTS with binlog_skip_flush_commands set to ON must not change gtid (super_read_only = ON) (user w/o RELOAD)]
-SET GLOBAL binlog_skip_flush_commands = OFF;
-FLUSH HOSTS;
-Warnings:
-Warning	1287	'FLUSH HOSTS' is deprecated and will be removed in a future release. Please use TRUNCATE TABLE performance_schema.host_cache instead
-include/assert.inc [FLUSH HOSTS with binlog_skip_flush_commands set to OFF must not change gtid (super_read_only = ON) (user w/o SUPER)]
-SET GLOBAL binlog_skip_flush_commands = ON;
-FLUSH HOSTS;
-Warnings:
-Warning	1287	'FLUSH HOSTS' is deprecated and will be removed in a future release. Please use TRUNCATE TABLE performance_schema.host_cache instead
-include/assert.inc [FLUSH HOSTS with binlog_skip_flush_commands set to ON must not change gtid (super_read_only = ON) (user w/o SUPER)]
-SET GLOBAL binlog_skip_flush_commands = OFF;
-FLUSH HOSTS;
-Warnings:
-Warning	1287	'FLUSH HOSTS' is deprecated and will be removed in a future release. Please use TRUNCATE TABLE performance_schema.host_cache instead
-include/assert.inc [FLUSH HOSTS with binlog_skip_flush_commands set to OFF must not change gtid (super_read_only = ON) (SUPER user)]
-SET GLOBAL binlog_skip_flush_commands = ON;
-FLUSH HOSTS;
-Warnings:
-Warning	1287	'FLUSH HOSTS' is deprecated and will be removed in a future release. Please use TRUNCATE TABLE performance_schema.host_cache instead
-include/assert.inc [FLUSH HOSTS with binlog_skip_flush_commands set to ON must not change gtid (super_read_only = ON) (SUPER user)]
-SET GLOBAL binlog_skip_flush_commands = OFF;
-SET GLOBAL super_read_only = OFF;
-SET GLOBAL read_only = OFF;
 FLUSH PRIVILEGES;
-ERROR 42000: Access denied; you need (at least one of) the RELOAD privilege(s) for this operation
+ERROR 42000: Access denied; you need (at least one of) the RELOAD or FLUSH_PRIVILEGES privilege(s) for this operation
 include/assert.inc [FLUSH PRIVILEGES with binlog_skip_flush_commands set to OFF must not change gtid (read_only = OFF, super_read_only = OFF) (user w/o RELOAD)]
 SET GLOBAL binlog_skip_flush_commands = ON;
 FLUSH PRIVILEGES;
-ERROR 42000: Access denied; you need (at least one of) the RELOAD privilege(s) for this operation
+ERROR 42000: Access denied; you need (at least one of) the RELOAD or FLUSH_PRIVILEGES privilege(s) for this operation
 include/assert.inc [FLUSH PRIVILEGES with binlog_skip_flush_commands set to ON must not change gtid (read_only = OFF, super_read_only = OFF) (user w/o RELOAD)]
 SET GLOBAL binlog_skip_flush_commands = OFF;
 FLUSH PRIVILEGES;
@@ -488,11 +399,11 @@ SET GLOBAL binlog_skip_flush_commands = OFF;
 SET GLOBAL super_read_only = OFF;
 SET GLOBAL read_only = ON;
 FLUSH PRIVILEGES;
-ERROR 42000: Access denied; you need (at least one of) the RELOAD privilege(s) for this operation
+ERROR 42000: Access denied; you need (at least one of) the RELOAD or FLUSH_PRIVILEGES privilege(s) for this operation
 include/assert.inc [FLUSH PRIVILEGES with binlog_skip_flush_commands set to OFF must not change gtid (read_only = ON, super_read_only = OFF) (user w/o RELOAD)]
 SET GLOBAL binlog_skip_flush_commands = ON;
 FLUSH PRIVILEGES;
-ERROR 42000: Access denied; you need (at least one of) the RELOAD privilege(s) for this operation
+ERROR 42000: Access denied; you need (at least one of) the RELOAD or FLUSH_PRIVILEGES privilege(s) for this operation
 include/assert.inc [FLUSH PRIVILEGES with binlog_skip_flush_commands set to ON must not change gtid (read_only = ON, super_read_only = OFF) (user w/o RELOAD)]
 SET GLOBAL binlog_skip_flush_commands = OFF;
 FLUSH PRIVILEGES;
@@ -509,11 +420,11 @@ include/assert.inc [FLUSH PRIVILEGES with binlog_skip_flush_commands set to ON m
 SET GLOBAL binlog_skip_flush_commands = OFF;
 SET GLOBAL super_read_only = ON;
 FLUSH PRIVILEGES;
-ERROR 42000: Access denied; you need (at least one of) the RELOAD privilege(s) for this operation
+ERROR 42000: Access denied; you need (at least one of) the RELOAD or FLUSH_PRIVILEGES privilege(s) for this operation
 include/assert.inc [FLUSH PRIVILEGES with binlog_skip_flush_commands set to OFF must not change gtid (super_read_only = ON) (user w/o RELOAD)]
 SET GLOBAL binlog_skip_flush_commands = ON;
 FLUSH PRIVILEGES;
-ERROR 42000: Access denied; you need (at least one of) the RELOAD privilege(s) for this operation
+ERROR 42000: Access denied; you need (at least one of) the RELOAD or FLUSH_PRIVILEGES privilege(s) for this operation
 include/assert.inc [FLUSH PRIVILEGES with binlog_skip_flush_commands set to ON must not change gtid (super_read_only = ON) (user w/o RELOAD)]
 SET GLOBAL binlog_skip_flush_commands = OFF;
 FLUSH PRIVILEGES;

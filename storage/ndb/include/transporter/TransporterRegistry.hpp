@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -54,6 +55,7 @@
 #include "portlib/NdbTick.h"
 #include "portlib/ndb_sockaddr.h"
 #include "util/NdbSocket.h"
+#include "util/TlsKeyManager.hpp"
 
 #ifndef _WIN32
 /*
@@ -231,6 +233,13 @@ class TransporterRegistry {
   bool init(TransporterReceiveHandle &);
 
   /**
+   * Initialize TLS context. Cannot be called prior to init(NodeId).
+   * Returns true on success.
+   */
+  bool init_tls(const char *search_path, int node_type,
+                int mgm_tls_requirement_level);
+
+  /**
      Perform handshaking of a client connection to accept it
      as transporter.
 
@@ -272,6 +281,13 @@ class TransporterRegistry {
   void remove_allTransporters(Transporter *);
   static void switch_active_trp(Multi_Transporter *);
   static Uint32 get_num_active_transporters(Multi_Transporter *);
+
+  /**
+   * An inactive transporter is part of a Multi_transporter.
+   * It is currently not in use, until activated by switch_active_trp().
+   * It is always in state DISCONNECTED.
+   */
+  bool is_inactive_trp(TrpId trpId) const;
 
  private:
   NdbMutex *theMultiTransporterMutex;
@@ -345,20 +361,17 @@ class TransporterRegistry {
     return performStates[trpId];
   }
   /**
-   * Initiate asynch connecting 'protocol' for node and transporters
+   * Initiate asynch connecting 'protocol' for transporters
    */
-  void start_connecting(NodeId node_id);
-  void start_connecting_trp(TrpId trpId);
+  void start_connecting(TrpId trpId);
   /**
    * start_disconnecting can be issued both from send and recv.
    * It is possible to specify from where it is called
    * in send_source parameter, this enables us to provide more
    * detailed information for disconnects.
    */
-  bool start_disconnecting(NodeId node_id, int errnum = 0,
+  bool start_disconnecting(TrpId trpId, int errnum = 0,
                            bool send_source = true);
-  bool start_disconnecting_trp(TrpId trpId, int errnum = 0,
-                               bool send_source = true);
   bool is_connected(TrpId trpId) const {
     return performStates[trpId] == CONNECTED;
   }
@@ -376,10 +389,9 @@ class TransporterRegistry {
 
  public:
   /**
-   * Set IOState on all Transporters to NodeId
+   * Set IOState on the Transporter
    */
-  void setIOState(NodeId nodeId, IOState state);
-  void setIOState_trp(TrpId trpId, IOState state);
+  void setIOState(TrpId trpId, IOState state);
 
   /**
    * Methods to handle backoff of connection attempts when attempt fails
@@ -416,7 +428,7 @@ class TransporterRegistry {
    * Must be called after creating all transporters for returned value to be
    * correct.
    */
-  Uint64 get_total_max_send_buffer() {
+  Uint64 get_total_max_send_buffer() const {
     assert(m_total_max_send_buffer > 0);
     return m_total_max_send_buffer;
   }
@@ -424,7 +436,13 @@ class TransporterRegistry {
   /**
    * Get transporter's connect count
    */
-  Uint32 get_connect_count(NodeId nodeId);
+  Uint32 get_connect_count(TrpId trpId) const;
+
+  /**
+   * Update send buffer allocated and used bytes for given transporter
+   */
+  void update_send_buffer_usage(TrpId trpId, Uint64 allocBytes,
+                                Uint64 usedBytes);
 
   /**
    * Set or clear overloaded bit.
@@ -436,7 +454,7 @@ class TransporterRegistry {
   /**
    * Get transporter's overload count since connect
    */
-  Uint32 get_overload_count(NodeId nodeId);
+  Uint32 get_overload_count(NodeId nodeId) const;
 
   /**
    * Set or clear slowdown bit.
@@ -448,7 +466,15 @@ class TransporterRegistry {
   /**
    * Get transporter's slowdown count since connect
    */
-  Uint32 get_slowdown_count(NodeId nodeId);
+  Uint32 get_slowdown_count(NodeId nodeId) const;
+
+  /**
+   * Get SendBuffer alloc + usage info
+   */
+  Uint64 get_send_buffer_alloc_bytes(TrpId trpId) const;
+  Uint64 get_send_buffer_used_bytes(TrpId trpId) const;
+  Uint64 get_send_buffer_max_alloc_bytes(TrpId trpId) const;
+  Uint64 get_send_buffer_max_used_bytes(TrpId trpId) const;
 
   /**
    * prepareSend
@@ -506,10 +532,11 @@ class TransporterRegistry {
     NodeId m_remote_nodeId;
     int m_s_service_port;  // signed port number
     const char *m_interface;
+    bool m_require_tls;
   };
   Vector<Transporter_interface> m_transporter_interface;
   void add_transporter_interface(NodeId remoteNodeId, const char *interf,
-                                 int s_port);  // signed port. <0 is dynamic
+                                 int s_port, bool requireTls);
 
   int get_transporter_count() const;
   NodeId get_transporter_node_id(TrpId id) const;
@@ -518,10 +545,14 @@ class TransporterRegistry {
   Transporter *get_node_base_transporter(NodeId nodeId) const;
   Transporter *get_node_transporter_instance(NodeId nodeId, int inst) const;
   bool is_shm_transporter(TrpId trp_id);
-  ndb_sockaddr get_connect_address(NodeId node_id) const;
+  TransporterType get_transporter_type(TrpId id) const;
 
-  Uint64 get_bytes_sent(NodeId nodeId) const;
-  Uint64 get_bytes_received(NodeId nodeId) const;
+  ndb_sockaddr get_connect_address_node(NodeId nodeId) const;
+  ndb_sockaddr get_connect_address(TrpId trpId) const;
+  bool is_encrypted_link(TrpId trpId) const;
+
+  Uint64 get_bytes_sent(TrpId trpId) const;
+  Uint64 get_bytes_received(TrpId trpId) const;
 
   Multi_Transporter *get_node_multi_transporter(NodeId node_id) const;
 
@@ -540,6 +571,8 @@ class TransporterRegistry {
   Uint32 nTransporters;
   Uint32 nTCPTransporters;
   Uint32 nSHMTransporters;
+  TlsKeyManager m_tls_keys;
+  int m_mgm_tls_req;
 
 #ifdef ERROR_INSERT
   TrpBitmask m_blocked;
@@ -667,8 +700,11 @@ class TransporterRegistry {
 
   void get_trps_for_node(NodeId nodeId, TrpId *trp_ids, Uint32 &num_trp_ids,
                          Uint32 max_trp_ids) const;
+  TrpId get_the_only_base_trp(NodeId nodeId) const;
 
   Uint32 get_num_trps();
+  TlsKeyManager *getTlsKeyManager() { return &m_tls_keys; }
+  bool hasTlsCert() const { return (bool)m_tls_keys.ctx(); }
 
  private:
   /**

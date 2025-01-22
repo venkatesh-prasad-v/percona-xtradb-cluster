@@ -887,7 +887,6 @@ ERROR 42S02: Unknown table 'test.t45'
 # already exists
 #
 show variables where
-variable_name not like 'rocksdb_fs_uri' and
 variable_name like 'rocksdb%' and
 variable_name not like 'rocksdb_max_open_files' and
 variable_name not like 'rocksdb_wsenv_%' and
@@ -1042,8 +1041,6 @@ rocksdb_stats_dump_period_sec	600
 rocksdb_stats_level	1
 rocksdb_stats_recalc_rate	0
 rocksdb_store_row_debug_checksums	OFF
-rocksdb_strict_collation_check	OFF
-rocksdb_strict_collation_exceptions	
 rocksdb_table_cache_numshardbits	6
 rocksdb_table_stats_max_num_rows_scanned	0
 rocksdb_table_stats_recalc_threshold_count	100

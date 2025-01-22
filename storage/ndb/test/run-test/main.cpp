@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -39,6 +40,7 @@
 #include <util/File.hpp>
 
 #include <NdbSleep.h>
+#include <ndb_opts.h>
 #include <ndb_version.h>
 #include <vector>
 #include "my_alloc.h"  // MEM_ROOT
@@ -170,6 +172,8 @@ static struct my_option g_options[] = {
      NO_ARG, 0, 0, 0, 0, 0, 0},
     {"version", 'V', "Output version information and exit.", 0, 0, 0, GET_BOOL,
      NO_ARG, 0, 0, 0, 0, 0, 0},
+    NdbStdOpt::tls_search_path,
+    NdbStdOpt::mgm_tls,
     {"site", 256, "Site", &g_site, &g_site, 0, GET_STR, REQUIRED_ARG, 0, 0, 0,
      0, 0, 0},
     {"clusters", 256, "Cluster", &g_clusters, &g_clusters, 0, GET_STR,

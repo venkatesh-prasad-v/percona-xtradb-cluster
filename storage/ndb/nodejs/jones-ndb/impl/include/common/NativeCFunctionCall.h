@@ -1,16 +1,17 @@
 /*
- Copyright (c) 2013, 2023, Oracle and/or its affiliates.
+ Copyright (c) 2013, 2024, Oracle and/or its affiliates.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
  as published by the Free Software Foundation.
 
- This program is also distributed with certain software (including
+ This program is designed to work with certain software (including
  but not limited to OpenSSL) that is licensed under separate terms,
  as designated in a particular file or component or in included license
  documentation.  The authors of MySQL hereby grant you an additional
  permission to link the program and your derivative works with the
- separately licensed software that they have included with MySQL.
+ separately licensed software that they have either included with
+ the program or referenced in the documentation.
 
  This program is distributed in the hope that it will be useful,
  but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -45,7 +46,7 @@ class NativeCFunctionCall_0_ : public AsyncCall_Returning<R> {
   Function_T function;
 
   /* Constructor */
-  NativeCFunctionCall_0_<R>(Function_T f, const Arguments &args)
+  NativeCFunctionCall_0_(Function_T f, const Arguments &args)
       : AsyncCall_Returning<R>(args.GetIsolate(), args[0]) /*callback*/,
         function(f) {}
 
@@ -67,7 +68,7 @@ class NativeCFunctionCall_1_ : public AsyncCall_Returning<R>,
   Function_T function;
 
   /* Constructor */
-  NativeCFunctionCall_1_<R, A0>(Function_T f, const Arguments &args)
+  NativeCFunctionCall_1_(Function_T f, const Arguments &args)
       : AsyncCall_Returning<R>(args.GetIsolate(), args[1]), /* callback */
         Call_1_<A0>(args),
         function(f) {}
@@ -92,7 +93,7 @@ class NativeCFunctionCall_2_ : public AsyncCall_Returning<R>,
   Function_T function;
 
   /* Constructor */
-  NativeCFunctionCall_2_<R, A0, A1>(Function_T f, const Arguments &args)
+  NativeCFunctionCall_2_(Function_T f, const Arguments &args)
       : AsyncCall_Returning<R>(args.GetIsolate(), args[2]),  // callback
         Call_2_<A0, A1>(args),
         function(f) {}
@@ -118,7 +119,7 @@ class NativeCFunctionCall_3_ : public AsyncCall_Returning<R>,
   Function_T function;
 
   /* Constructor */
-  NativeCFunctionCall_3_<R, A0, A1, A2>(Function_T f, const Arguments &args)
+  NativeCFunctionCall_3_(Function_T f, const Arguments &args)
       : AsyncCall_Returning<R>(args.GetIsolate(), args[3]), /* callback */
         Call_3_<A0, A1, A2>(args),
         function(f) {}
@@ -145,7 +146,7 @@ class NativeCFunctionCall_4_ : public AsyncCall_Returning<R>,
   Function_T function;
 
   /* Constructor */
-  NativeCFunctionCall_4_<R, A0, A1, A2, A3>(Function_T f, const Arguments &args)
+  NativeCFunctionCall_4_(Function_T f, const Arguments &args)
       : AsyncCall_Returning<R>(args.GetIsolate(), args[4]), /* callback */
         Call_4_<A0, A1, A2, A3>(args),
         function(f) {}
@@ -173,8 +174,7 @@ class NativeCFunctionCall_6_ : public AsyncCall_Returning<R>,
   Function_T function;
 
   /* Constructor */
-  NativeCFunctionCall_6_<R, A0, A1, A2, A3, A4, A5>(Function_T f,
-                                                    const Arguments &args)
+  NativeCFunctionCall_6_(Function_T f, const Arguments &args)
       : AsyncCall_Returning<R>(args.GetIsolate(), args[6]), /* callback */
         Call_6_<A0, A1, A2, A3, A4, A5>(args),
         function(f) {}
@@ -206,8 +206,7 @@ class NativeCFunctionCall_8_ : public AsyncCall_Returning<R>,
   Function_T function;
 
   /* Constructor */
-  NativeCFunctionCall_8_<R, A0, A1, A2, A3, A4, A5, A6, A7>(
-      Function_T f, const Arguments &args)
+  NativeCFunctionCall_8_(Function_T f, const Arguments &args)
       : AsyncCall_Returning<R>(args.GetIsolate(), args[8]), /* callback */
         Call_8_<A0, A1, A2, A3, A4, A5, A6, A7>(args),
         function(f) {}
@@ -265,7 +264,7 @@ class NativeCVoidFunctionCall_1_ : public AsyncCall_Returning<int>,
   Function_T function;
 
   /* Constructor */
-  NativeCVoidFunctionCall_1_<A0>(Function_T f, const Arguments &args)
+  NativeCVoidFunctionCall_1_(Function_T f, const Arguments &args)
       : AsyncCall_Returning<int>(args.GetIsolate(), args[1], 1),  // callback
         Call_1_<A0>(args),
         function(f) {}

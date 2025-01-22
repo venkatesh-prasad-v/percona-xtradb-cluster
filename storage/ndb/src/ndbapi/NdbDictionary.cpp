@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -29,7 +30,7 @@
 #include <signaldata/CreateHashMap.hpp>
 #include "NdbDictionaryImpl.hpp"
 #include "decimal.h"
-#include "m_ctype.h"
+#include "mysql/strings/m_ctype.h"
 
 /* NdbRecord static helper methods */
 
@@ -2394,20 +2395,8 @@ void NdbDictionary::Dictionary::releaseEvent(
   delete event;
 }
 
-int NdbDictionary::Dictionary::listEvents(List &list) {
-  // delegate to overloaded const function for same semantics
-  const NdbDictionary::Dictionary *const cthis = this;
-  return cthis->NdbDictionary::Dictionary::listEvents(list);
-}
-
 int NdbDictionary::Dictionary::listEvents(List &list) const {
   return m_impl.listEvents(list);
-}
-
-int NdbDictionary::Dictionary::listObjects(List &list, Object::Type type) {
-  // delegate to overloaded const function for same semantics
-  const NdbDictionary::Dictionary *const cthis = this;
-  return cthis->NdbDictionary::Dictionary::listObjects(list, type);
 }
 
 int NdbDictionary::Dictionary::listObjects(List &list,
@@ -2419,12 +2408,6 @@ int NdbDictionary::Dictionary::listObjects(List &list,
 int NdbDictionary::Dictionary::listObjects(List &list, Object::Type type,
                                            bool fullyQualified) const {
   return m_impl.listObjects(list, type, fullyQualified);
-}
-
-int NdbDictionary::Dictionary::listIndexes(List &list, const char *tableName) {
-  // delegate to overloaded const function for same semantics
-  const NdbDictionary::Dictionary *const cthis = this;
-  return cthis->NdbDictionary::Dictionary::listIndexes(list, tableName);
 }
 
 int NdbDictionary::Dictionary::listIndexes(List &list,

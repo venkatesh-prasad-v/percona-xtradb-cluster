@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2014, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2014, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -28,54 +29,20 @@
 #include <cstdint>
 
 // Using
-#include "m_string.h"  // NullS
 #include "my_dbug.h"
 #include "mysql/status_var.h"  // enum_mysql_show_type
+#include "nulls.h"             // NullS
 #include "sql/current_thd.h"   // current_thd
 #include "storage/ndb/include/ndbapi/NdbError.hpp"
 #include "storage/ndb/plugin/ndb_apply_status_table.h"
 #include "storage/ndb/plugin/ndb_global_schema_lock_guard.h"  // Ndb_global_schema_lock_guard
-#include "storage/ndb/plugin/ndb_local_connection.h"
-#include "storage/ndb/plugin/ndb_log.h"
 #include "storage/ndb/plugin/ndb_metadata_change_monitor.h"
 #include "storage/ndb/plugin/ndb_ndbapi_util.h"
 #include "storage/ndb/plugin/ndb_share.h"
 
-int Ndb_binlog_thread::do_init() {
-  if (!binlog_hooks.register_hooks(do_after_reset_master)) {
-    ndb_log_error("Failed to register binlog hooks");
-    return 1;
-  }
-  return 0;
-}
+int Ndb_binlog_thread::do_init() { return 0; }
 
-int Ndb_binlog_thread::do_deinit() {
-  binlog_hooks.unregister_all();
-  return 0;
-}
-
-/*
-  @brief Callback called when RESET MASTER has successfully removed binlog and
-  reset index. This means that ndbcluster also need to clear its own binlog
-  index(which is stored in the mysql.ndb_binlog_index table).
-
-  @return 0 on success
-*/
-int Ndb_binlog_thread::do_after_reset_master(void *) {
-  DBUG_TRACE;
-
-  // Truncate the mysql.ndb_binlog_index table
-  // - if table does not exist ignore the error as it is a
-  // "consistent" behavior
-  Ndb_local_connection mysqld(current_thd);
-  const bool ignore_no_such_table = true;
-  if (mysqld.truncate_table("mysql", "ndb_binlog_index",
-                            ignore_no_such_table)) {
-    // Failed to truncate table
-    return 1;
-  }
-  return 0;
-}
+int Ndb_binlog_thread::do_deinit() { return 0; }
 
 void Ndb_binlog_thread::validate_sync_excluded_objects(THD *thd) {
   metadata_sync.validate_excluded_objects(thd);

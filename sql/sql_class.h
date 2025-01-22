@@ -1,15 +1,16 @@
-/* Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -45,11 +46,12 @@
 #include <bitset>
 #include <memory>
 #include <new>
+#include <stack>
 #include <string>
+#include <unordered_map>
 
 #include "dur_prop.h"  // durability_properties
 #include "lex_string.h"
-#include "m_ctype.h"
 #include "map_helpers.h"
 #include "mutex_lock.h"
 #include "my_alloc.h"
@@ -74,12 +76,13 @@
 #include "mysql/components/services/bits/psi_statement_bits.h"
 #include "mysql/components/services/bits/psi_thread_bits.h"
 #include "mysql/components/services/bits/psi_transaction_bits.h"
+#include "mysql/plugin_audit.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/mysql_statement.h"
 #include "mysql/psi/mysql_thread.h"
 #include "mysql/service_thread_scheduler.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysql/thread_type.h"
-#include "mysql_com.h"
 #include "mysql_com_server.h"  // NET_SERVER
 #include "mysqld_error.h"
 #include "pfs_thread_provider.h"
@@ -92,12 +95,15 @@
 #include "sql/mdl.h"
 #include "sql/opt_costmodel.h"
 #include "sql/opt_trace_context.h"  // Opt_trace_context
+#include "sql/parse_location.h"
 #include "sql/psi_memory_key.h"
 #include "sql/query_options.h"
+#include "sql/reference_caching_setup.h"
 #include "sql/resourcegroups/resource_group_basic_types.h"
 #include "sql/rpl_context.h"  // Rpl_thd_context
 #include "sql/rpl_gtid.h"
 #include "sql/session_tracker.h"  // Session_tracker
+#include "sql/sql_audit.h"
 #include "sql/sql_connect.h"
 #include "sql/sql_const.h"
 #include "sql/sql_digest_stream.h"  // sql_digest_state
@@ -108,6 +114,7 @@
 #include "sql/system_variables.h"       // system_variables
 #include "sql/transaction_info.h"       // Ha_trx_info
 #include "sql/xa.h"
+#include "sql_event_tracking_to_audit_event_mapping.h"
 #include "sql_string.h"
 #include "template_utils.h"
 #include "thr_lock.h"
@@ -137,7 +144,6 @@ struct TABLE;
 class Table_ref;
 struct timeval;
 struct User_level_lock;
-struct YYLTYPE;
 
 namespace dd {
 namespace cache {
@@ -642,7 +648,7 @@ class Open_tables_state {
  public:
   Reprepare_observer *get_reprepare_observer() const {
     return m_reprepare_observers.size() > 0 ? m_reprepare_observers.back()
-                                            : NULL;
+                                            : nullptr;
   }
 
   void push_reprepare_observer(Reprepare_observer *o) {
@@ -934,12 +940,6 @@ class Global_read_lock {
   void unlock_global_read_lock(THD *thd);
 
   /**
-    Used by innodb memcached server to check if any connections
-    have global read lock
-  */
-  static bool global_read_lock_active() { return m_atomic_active_requests > 0; }
-
-  /**
     Check if this connection can acquire protection against GRL and
     emit error if otherwise.
   */
@@ -965,7 +965,6 @@ class Global_read_lock {
   void set_explicit_lock_duration(THD *thd);
 
  private:
-  static std::atomic<int32> m_atomic_active_requests;
   enum_grl_state m_state;
 
 #ifdef WITH_WSREP
@@ -1072,10 +1071,7 @@ class Bloom_filter final {
   /**
      Check whether key is maybe a member of a set
 
-     @param[in, out]    mem_root        MEM_ROOT to allocate the bit set in, if
-      not allocated already
-     @param[in]         key             key whose presence to check
-
+     @param[in] key key whose presence to check
      @return if true, the key might be a member of the set. If false, the key
      is definitely not a member of the set.
   */
@@ -1131,6 +1127,28 @@ class Transactional_ddl_context {
 
 struct PS_PARAM;
 
+using Event_tracking_data =
+    std::pair<Event_tracking_class, Event_tracking_information *>;
+using Event_tracking_data_stack = std::stack<Event_tracking_data>;
+
+/**
+  Base class for secondary engine statement context objects. Secondary
+  storage engines may create classes derived from this one which
+  contain state they need to preserve in lifecycle of this query.
+*/
+class Secondary_engine_statement_context {
+ public:
+  /**
+    Destructs the secondary engine statement context object. It is
+    called after the query execution has completed. Secondary engines
+    may override the destructor in subclasses and add code that
+    performs cleanup tasks that are needed after query execution.
+  */
+  virtual ~Secondary_engine_statement_context() = default;
+
+  virtual bool is_primary_engine_optimal() const { return true; }
+};
+
 /**
   @class THD
   For each client connection we create a separate thread with THD serving as
@@ -1178,7 +1196,7 @@ class THD : public MDL_context_owner,
     call Item::check_column_privileges().
     After use, restore previous value as current value.
   */
-  ulong want_privilege;
+  Access_bitmask want_privilege;
 
  private:
   /**
@@ -1255,6 +1273,12 @@ class THD : public MDL_context_owner,
   */
   String m_rewritten_query;
 
+  /**
+    Current query's secondary engine statement context.
+  */
+  std::unique_ptr<Secondary_engine_statement_context>
+      m_secondary_engine_statement_context;
+
  public:
   /* Used to execute base64 coded binlog events in MySQL server */
   Relay_log_info *rli_fake;
@@ -1279,6 +1303,18 @@ class THD : public MDL_context_owner,
     ha_data associated with it and memorizes the fact of that.
   */
   void rpl_detach_engine_ha_data();
+
+  /*
+   Set secondary_engine_statement_context to new context.
+   This function assumes existing m_secondary_engine_statement_context is empty,
+   such that there's only context throughout the query's lifecycle.
+  */
+  void set_secondary_engine_statement_context(
+      std::unique_ptr<Secondary_engine_statement_context> context);
+
+  Secondary_engine_statement_context *secondary_engine_statement_context() {
+    return m_secondary_engine_statement_context.get();
+  }
 
   /**
     When the thread is a binlog or slave applier it reattaches the engine
@@ -1341,6 +1377,7 @@ class THD : public MDL_context_owner,
     @sa system_status_var::last_query_cost
   */
   double m_current_query_cost;
+
   /**
     Current query partial plans.
     @sa system_status_var::last_query_partial_plans
@@ -1467,6 +1504,14 @@ class THD : public MDL_context_owner,
  private:
   mysql_mutex_t LOCK_query_plan;
 
+  /**
+    Keep a cached value saying whether the connection is alive. Update when
+    pushing, popping or getting the protocol. Used by
+    information_schema.processlist to avoid locking mutexes that might
+    affect performance.
+  */
+  std::atomic<bool> m_cached_is_connection_alive;
+
  public:
   /// Locks the query plan of this THD
   void lock_query_plan() { mysql_mutex_lock(&LOCK_query_plan); }
@@ -1497,7 +1542,18 @@ class THD : public MDL_context_owner,
   Security_context *m_security_ctx;
 
   Security_context *security_context() const { return m_security_ctx; }
-  void set_security_context(Security_context *sctx) { m_security_ctx = sctx; }
+  void set_security_context(Security_context *sctx) {
+    if (sctx == m_security_ctx) return;
+
+    /*
+      To prevent race conditions arising from concurrent threads executing
+      I_S.PROCESSLIST, a mutex LOCK_thd_security_ctx safeguards the security
+      context switch.
+    */
+    mysql_mutex_lock(&LOCK_thd_security_ctx);
+    m_security_ctx = sctx;
+    mysql_mutex_unlock(&LOCK_thd_security_ctx);
+  }
   List<Security_context> m_view_ctx_list;
 
   /**
@@ -1518,7 +1574,7 @@ class THD : public MDL_context_owner,
 
   const Protocol *get_protocol() const { return m_protocol; }
 
-  Protocol *get_protocol() { return m_protocol; }
+  Protocol *get_protocol();
 
   SSL_handle get_ssl() const {
 #ifndef NDEBUG
@@ -1546,10 +1602,7 @@ class THD : public MDL_context_owner,
     return pointer_cast<const Protocol_classic *>(m_protocol);
   }
 
-  Protocol_classic *get_protocol_classic() {
-    assert(is_classic_protocol());
-    return pointer_cast<Protocol_classic *>(m_protocol);
-  }
+  Protocol_classic *get_protocol_classic();
 
  private:
   Protocol *m_protocol;  // Current protocol
@@ -2159,6 +2212,12 @@ class THD : public MDL_context_owner,
     'read_only' and 'super_read_only' options.
   */
   bool skip_readonly_check;
+
+  /*
+    Indicates that the command which is under execution should ignore the
+    read only transaction mode.
+  */
+  bool skip_transaction_read_only_check;
   /**
     Indicate if the current statement should be discarded
     instead of written to the binlog.
@@ -2223,12 +2282,28 @@ class THD : public MDL_context_owner,
  public:
   const NET *get_net() const { return &net; }
 
-  void set_skip_readonly_check() { skip_readonly_check = true; }
-
+  void set_skip_readonly_check() {
+    skip_readonly_check = true;
+    // Make a transaction skip the read only check set via the command
+    // SET SESSION TRANSACTION READ ONLY
+    set_skip_transaction_read_only_check();
+  }
+  void set_skip_transaction_read_only_check() {
+    skip_transaction_read_only_check = true;
+  }
   bool is_cmd_skip_readonly() const { return skip_readonly_check; }
 
+  bool is_cmd_skip_transaction_read_only() const {
+    return skip_transaction_read_only_check;
+  }
   void reset_skip_readonly_check() {
     if (skip_readonly_check) skip_readonly_check = false;
+    reset_skip_transaction_read_only_check();
+  }
+
+  void reset_skip_transaction_read_only_check() {
+    if (skip_transaction_read_only_check)
+      skip_transaction_read_only_check = false;
   }
 
   void issue_unsafe_warnings();
@@ -3170,6 +3245,7 @@ class THD : public MDL_context_owner,
   bool wsrep_prepared_statement_TOI_started;
   ulonglong wsrep_bin_log_flag_save;
   bool wsrep_applier;         /* dedicated slave applier thread */
+  bool wsrep_sst_donor;       /* SST donor thread */
   bool wsrep_applier_closing; /* applier marked to close */
   bool wsrep_client_thread;   /* to identify client threads */
   bool wsrep_allow_mdl_conflict;
@@ -3440,7 +3516,7 @@ class THD : public MDL_context_owner,
     Audit API events are generated, when this flag is true. The flag
     is initially true, but it can be set false in some cases, e.g.
     Session Service's THDs are created with auditing disabled. Auditing
-    is enabled on MYSQL_AUDIT_CONNECTION_CONNECT event.
+    is enabled on EVENT_TRACKING_CONNECTION_CONNECT event.
   */
   bool m_audited;
 
@@ -3577,7 +3653,7 @@ class THD : public MDL_context_owner,
   /** Check if clone network Vio is active. */
   inline bool check_clone_vio() {
     mysql_mutex_lock(&LOCK_thd_data);
-    bool is_active = (clone_vio != nullptr);
+    const bool is_active = (clone_vio != nullptr);
     mysql_mutex_unlock(&LOCK_thd_data);
     return (is_active);
   }
@@ -3844,7 +3920,7 @@ class THD : public MDL_context_owner,
   bool is_classic_protocol() const;
 
   /** Return false if connection to client is broken. */
-  bool is_connected() final;
+  bool is_connected(bool use_cached_connection_alive = false) final;
 
   /**
     Mark the current error as fatal. Warning: this does not
@@ -3973,6 +4049,7 @@ class THD : public MDL_context_owner,
 
   /**
     Restore locations set by calls to nocheck_register_item_tree_change().
+    Note that this needs to happen before Item::cleanup is called.
   */
   void rollback_item_tree_changes();
 
@@ -4360,10 +4437,10 @@ class THD : public MDL_context_owner,
   static const int OWNED_SIDNO_ANONYMOUS = -2;
 
   /**
-    For convenience, this contains the SID component of the GTID
+    For convenience, this contains the TSID component of the GTID
     stored in owned_gtid.
   */
-  rpl_sid owned_sid;
+  mysql::gtid::Tsid owned_tsid;
 
   /** SE GTID persistence flag types. */
   enum Se_GTID_flag : size_t {
@@ -4386,10 +4463,10 @@ class THD : public MDL_context_owner,
   /** Flags for SE GTID persistence. */
   Se_GTID_flagset m_se_gtid_flags;
 
-  /** Defer freeing owned GTID and SID till unpinned. */
+  /** Defer freeing owned GTID and TSID till unpinned. */
   void pin_gtid() { m_se_gtid_flags.set(SE_GTID_PIN); }
 
-  /** Unpin and free GTID and SID. */
+  /** Unpin and free GTID and TSID. */
   void unpin_gtid() {
     m_se_gtid_flags.reset(SE_GTID_PIN);
     /* Do any deferred cleanup */
@@ -4481,7 +4558,7 @@ class THD : public MDL_context_owner,
 #endif
     }
     owned_gtid.clear();
-    owned_sid.clear();
+    owned_tsid.clear();
     owned_gtid.dbug_print(nullptr, "set owned_gtid in clear_owned_gtids");
   }
 
@@ -4702,8 +4779,9 @@ class THD : public MDL_context_owner,
   friend void my_message_sql(uint, const char *, myf);
 
   /**
-    Raise a generic SQL condition. Also calls mysql_audit_notify() unless
-    the condition is handled by a SQL condition handler.
+    Raise a generic SQL condition. Also calls
+    mysql_event_tracking_general_notify() unless the condition is handled by a
+    SQL condition handler.
 
     @param sql_errno the condition error number
     @param sqlstate the condition SQLSTATE
@@ -4800,7 +4878,7 @@ class THD : public MDL_context_owner,
     Protected with the LOCK_thd_query mutex.
   */
   void set_query(const char *query_arg, size_t query_length_arg) {
-    LEX_CSTRING tmp = {query_arg, query_length_arg};
+    const LEX_CSTRING tmp = {query_arg, query_length_arg};
     set_query(tmp);
   }
   void set_query(LEX_CSTRING query_arg);
@@ -5036,6 +5114,7 @@ class THD : public MDL_context_owner,
     Optimizer cost model for server operations.
   */
   Cost_model_server m_cost_model;
+  Cost_model_server m_cost_model_hypergraph;
 
  public:
   /**
@@ -5043,12 +5122,12 @@ class THD : public MDL_context_owner,
 
     This function should be called each time a new query is started.
   */
-  void init_cost_model() { m_cost_model.init(); }
+  void init_cost_model();
 
   /**
     Retrieve the optimizer cost model for this connection.
   */
-  const Cost_model_server *cost_model() const { return &m_cost_model; }
+  const Cost_model_server *cost_model() const;
 
   Session_tracker session_tracker;
   Session_sysvar_resource_manager session_sysvar_res_mgr;
@@ -5058,15 +5137,15 @@ class THD : public MDL_context_owner,
       MY_ATTRIBUTE((format(printf, 2, 3)));
   void syntax_error(int mysql_errno, ...);
 
-  void syntax_error_at(const YYLTYPE &location) {
+  void syntax_error_at(const POS &location) {
     syntax_error_at(location, ER_SYNTAX_ERROR);
   }
-  void syntax_error_at(const YYLTYPE &location, const char *format, ...)
+  void syntax_error_at(const POS &location, const char *format, ...)
       MY_ATTRIBUTE((format(printf, 3, 4)));
-  void syntax_error_at(const YYLTYPE &location, int mysql_errno, ...);
+  void syntax_error_at(const POS &location, int mysql_errno, ...);
 
-  void vsyntax_error_at(const YYLTYPE &location, const char *format,
-                        va_list args) MY_ATTRIBUTE((format(printf, 3, 0)));
+  void vsyntax_error_at(const POS &location, const char *format, va_list args)
+      MY_ATTRIBUTE((format(printf, 3, 0)));
   void vsyntax_error_at(const char *pos_in_lexer_raw_buffer, const char *format,
                         va_list args) MY_ATTRIBUTE((format(printf, 3, 0)));
 
@@ -5232,7 +5311,7 @@ class THD : public MDL_context_owner,
     This is used by replication to decide if the I/O thread should be
     killed or not when stopping the replication threads.
 
-    In ordinary STOP SLAVE case, the I/O thread will wait for disk space
+    In ordinary STOP REPLICA case, the I/O thread will wait for disk space
     or to be killed regardless of this flag value.
 
     In server shutdown case, if this flag is true, the I/O thread will be
@@ -5279,6 +5358,13 @@ class THD : public MDL_context_owner,
   */
   bool is_secondary_storage_engine_eligible() const;
 
+  /// Indicate whether secondary storage engine is forced for this execution
+  void set_secondary_engine_forced(bool forced) {
+    m_secondary_engine_forced = forced;
+  }
+
+  bool is_secondary_engine_forced() const { return m_secondary_engine_forced; }
+
  private:
   /**
     This flag tells if a secondary storage engine can be used to
@@ -5287,7 +5373,15 @@ class THD : public MDL_context_owner,
   Secondary_engine_optimization m_secondary_engine_optimization =
       Secondary_engine_optimization::PRIMARY_ONLY;
 
+  /**
+    Flag that tells whether secondary storage engine is forced for execution.
+    Notice that use_secondary_engine is not reliable because it may be restored
+    early.
+  */
+  bool m_secondary_engine_forced{false};
+
   void cleanup_after_parse_error();
+
   /**
     Flag that indicates if the user of current session has SYSTEM_USER privilege
   */
@@ -5375,10 +5469,44 @@ class THD : public MDL_context_owner,
  public:
   bool add_external(unsigned int slot, void *data);
   void *fetch_external(unsigned int slot);
+  void release_external_store();
 
  private:
   std::unordered_map<unsigned int, void *> external_store_;
-};  // End of class THD
+
+ public:
+  /* Indicates if we are inside loadable function */
+  bool in_loadable_function{false};
+
+ public:
+  Event_tracking_data get_event_tracking_data() {
+    if (!event_tracking_data_.empty()) return event_tracking_data_.top();
+    return std::make_pair(Event_tracking_class::LAST, nullptr);
+  }
+
+  bool check_event_subscribers(Event_tracking_class event,
+                               unsigned long subevent, bool check_audited);
+  bool event_notify(struct st_mysql_event_generic *event_data);
+  void refresh_reference_caches() {
+    if (events_cache_) events_cache_->refresh_all();
+  }
+
+ private:
+  bool push_event_tracking_data(
+      Event_tracking_class event,
+      const Event_tracking_information *Event_tracking_information);
+
+  void pop_event_tracking_data();
+
+  Event_reference_caching_cache *events_cache_{nullptr};
+  Event_tracking_data_stack event_tracking_data_;
+  bool audit_plugins_present;
+
+ public:
+  /// Flag indicating whether this session incremented the number of sessions
+  /// with GTID_NEXT set to AUTOMATIC:tag
+  bool has_incremented_gtid_automatic_count;
+};
 
 /**
    Return lock_tables_mode for secondary engine.

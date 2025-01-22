@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2004, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2004, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -22,17 +23,17 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
 
+#include <getarg.h>
 #include <HugoOperations.hpp>
 #include <HugoTransactions.hpp>
+#include <InputStream.hpp>
 #include <NDBT.hpp>
 #include <NdbApi.hpp>
 #include <NdbRestarter.hpp>
 #include <UtilTransactions.hpp>
 #include <signaldata/DumpStateOrd.hpp>
+#include "mgmapi_internal.h"
 #include "util/require.h"
-
-#include <getarg.h>
-#include <InputStream.hpp>
 
 struct CASE {
   bool start_row;
@@ -253,6 +254,7 @@ static int parse_args(int argc, char **argv) {
 
 static int connect_ndb() {
   g_cluster_connection = new Ndb_cluster_connection();
+  g_cluster_connection->configure_tls(opt_tls_search_path, opt_mgm_tls);
   if (g_cluster_connection->connect(12, 5, 1) != 0) {
     return 1;
   }
@@ -361,8 +363,8 @@ static int pause_lcp(int error) {
 
   int filter[] = {15, NDB_MGM_EVENT_CATEGORY_INFO, 0};
 
-  NdbSocket my_fd{ndb_socket_create_from_native(
-      ndb_mgm_listen_event(g_restarter.handle, filter))};
+  NdbSocket my_fd =
+      ndb_mgm_listen_event_internal(g_restarter.handle, filter, 0, true);
 
   require(my_fd.is_valid());
   require(!g_restarter.insertErrorInAllNodes(error));
@@ -452,8 +454,7 @@ static int continue_lcp(int error) {
   NdbSocket my_fd;
 
   if (error) {
-    my_fd = ndb_socket_create_from_native(
-        ndb_mgm_listen_event(g_restarter.handle, filter));
+    my_fd = ndb_mgm_listen_event_internal(g_restarter.handle, filter, 0, true);
     require(my_fd.is_valid());
   }
 

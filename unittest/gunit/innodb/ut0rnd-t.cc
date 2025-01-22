@@ -1,15 +1,16 @@
-/* Copyright (c) 2013, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2013, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -425,7 +426,6 @@ static void BM_RND_GEN_STD_HASH(const size_t num_iterations) {
 }
 BENCHMARK(BM_RND_GEN_STD_HASH)
 
-#if SIZEOF_VOIDP >= 8
 static void BM_RND_GEN_STD_LINEAR(const size_t num_iterations) {
   std::linear_congruential_engine<uint64_t, 0xacb1f3526e25dd39,
                                   0xf72a876a516b4b56,
@@ -435,7 +435,6 @@ static void BM_RND_GEN_STD_LINEAR(const size_t num_iterations) {
                    [&eng](uint64_t, uint64_t n) { return eng(); });
 }
 BENCHMARK(BM_RND_GEN_STD_LINEAR)
-#endif
 
 static void BM_RND_GEN(const size_t num_iterations) {
   benchmark_hasher(num_iterations,

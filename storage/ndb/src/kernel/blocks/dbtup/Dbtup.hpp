@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -1188,7 +1189,7 @@ class Dbtup : public SimulatedBlock {
 
     ReadFunction *readFunctionArray;
     UpdateFunction *updateFunctionArray;
-    CHARSET_INFO **charsetArray;
+    const CHARSET_INFO **charsetArray;
 
     Uint32 readKeyArray;
     /*
@@ -2872,7 +2873,7 @@ class Dbtup : public SimulatedBlock {
   void sendAlterTabRef(Signal *signal, Uint32 errorCode);
   void sendAlterTabConf(Signal *, Uint32 clientData = RNIL);
 
-  void handleCharsetPos(Uint32 csNumber, CHARSET_INFO **charsetArray,
+  void handleCharsetPos(Uint32 csNumber, const CHARSET_INFO **charsetArray,
                         Uint32 noOfCharsets, Uint32 &charsetIndex,
                         Uint32 &attrDes2);
   Uint32 computeTableMetaData(TablerecPtr regTabPtr, Uint32 line);
@@ -3910,8 +3911,6 @@ class Dbtup : public SimulatedBlock {
 
  private:
   void release_c_free_scan_lock();
-  bool getNextTcConRec(Uint32 &next, OperationrecPtr &opPtr, Uint32 max_loops);
-
   void checkPoolShrinkNeed(Uint32 pool_index,
                            const TransientFastSlotPool &pool);
   void sendPoolShrink(Uint32 pool_index);

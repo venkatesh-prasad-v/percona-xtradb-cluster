@@ -751,7 +751,7 @@ static connection_t *listener(thread_group_t *thread_group) {
   Adjust thread counters in group or global
   whenever thread is created or is about to exit
 
-  @param thread_group
+  @param thread_group Thread group
   @param count -  1, when new thread is created
                  -1, when thread is about to exit
 */
@@ -1197,6 +1197,7 @@ bool Thread_pool_connection_handler::add_connection(
 
   if (unlikely(!thd)) {
     channel_info->send_error_and_close_channel(ER_OUT_OF_RESOURCES, 0, false);
+    Connection_handler_manager::dec_connection_count();
     DBUG_RETURN(true);
   }
 
@@ -1206,6 +1207,7 @@ bool Thread_pool_connection_handler::add_connection(
     thd->get_protocol_classic()->end_net();
     delete thd;
     channel_info->send_error_and_close_channel(ER_OUT_OF_RESOURCES, 0, false);
+    Connection_handler_manager::dec_connection_count();
     DBUG_RETURN(true);
   }
 

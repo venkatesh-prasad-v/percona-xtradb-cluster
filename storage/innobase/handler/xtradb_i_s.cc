@@ -23,9 +23,9 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "sql/auth/sql_acl.h"  // PROCESS_ACL
 
 #include "i_s.h"
-#include "m_ctype.h"
 #include "my_sys.h"
 #include "myisampack.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysys_err.h"
 #include "sql/sql_plugin.h"
 
@@ -147,7 +147,7 @@ struct st_mysql_plugin i_s_xtradb_read_view = {
     STRUCT_FLD(descr, "InnoDB Read View information"),
     STRUCT_FLD(license, PLUGIN_LICENSE_GPL),
     STRUCT_FLD(init, xtradb_read_view_init),
-    nullptr,
+    STRUCT_FLD(check_uninstall, nullptr),
     STRUCT_FLD(deinit, i_s_common_deinit),
     STRUCT_FLD(version, INNODB_VERSION_SHORT),
     STRUCT_FLD(status_vars, nullptr),

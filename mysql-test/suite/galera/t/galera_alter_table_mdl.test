@@ -8,7 +8,7 @@
 --source include/count_sessions.inc
 
 # Clear the binlogs before starting the test
-RESET MASTER;
+RESET BINARY LOGS AND GTIDS;
 
 # Don't make threads wait
 --let $wsrep_sync_wait_saved = `SELECT @@GLOBAL.wsrep_sync_wait`
@@ -61,14 +61,14 @@ SELECT * FROM t1;
 # Assert that INSERT query commits after the ALTER query
 --let $limit= 2,10
 --let $event_sequence= Anonymous_Gtid # Query/.*CREATE TABLE.* # Anonymous_Gtid # Query/.*ALTER TABLE.* # Anonymous_Gtid # Query/.*BEGIN # Table_map # Write_rows # Xid
---source include/assert_binlog_events.inc
+--source include/rpl/assert_binlog_events.inc
 
 --echo # --------------------------------
 --echo # Test 2: Execute ALTER TABLE on node1 (Local)
 --echo # --------------------------------
 
 # Clear the binlogs before starting the next test
-RESET MASTER;
+RESET BINARY LOGS AND GTIDS;
 
 # Execute ALTER TABLE from node1
 --connection node_1
@@ -105,14 +105,14 @@ SELECT * FROM t1;
 # Assert that INSERT query commits after the ALTER query
 --let $limit= 2,10
 --let $event_sequence= Anonymous_Gtid # Query/.*ALTER TABLE.* # Anonymous_Gtid # Query/.*BEGIN # Table_map # Write_rows # Xid
---source include/assert_binlog_events.inc
+--source include/rpl/assert_binlog_events.inc
 
 --echo # --------------------------------
 --echo # Test 3: Testing with wsrep_OSU_method = "RSU"
 --echo # --------------------------------
 
 # Clear the binlogs before starting the next test
-RESET MASTER;
+RESET BINARY LOGS AND GTIDS;
 
 --connection node_1
 SET SESSION wsrep_OSU_method = "RSU";
@@ -155,7 +155,7 @@ SET SESSION wsrep_OSU_method = DEFAULT;
 # PXC-4313 disables binlogging for RSU, so no ALTER TABLE in binlog
 # --let $limit= 2,10
 # --let $event_sequence= Anonymous_Gtid # Query/.*ALTER TABLE.* # Anonymous_Gtid # Query/.*BEGIN # Table_map # Write_rows # Xid
-# --source include/assert_binlog_events.inc
+# --source include/rpl/assert_binlog_events.inc
 
 # Reset the debug point before further testing.
 --source include/remove_debug_point.inc

@@ -1,15 +1,16 @@
-/* Copyright (c) 2021, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -27,15 +28,14 @@
 
 #include <gtest/gtest.h>
 
-#include "m_ctype.h"                     // my_charset_utf8mb4_0900_ai_ci
 #include "my_alloc.h"                    // MEM_ROOT
-#include "my_compiler.h"
 #include "my_time.h"                     // MYSQL_TIME
+#include "mysql/strings/m_ctype.h"       // my_charset_utf8mb4_0900_ai_ci
+#include "sql-common/my_decimal.h"       // my_decimal
 #include "sql/field.h"                   // my_charset_numeric
 #include "sql/histograms/equi_height.h"  // Equi_height
 #include "sql/histograms/histogram.h"    // Histogram, Histogram_comparator
 #include "sql/histograms/value_map.h"    // Value_map<T>
-#include "sql/my_decimal.h"              // my_decimal
 #include "sql_string.h"                  // String
 
 namespace histogram_selectivity_test {
@@ -320,12 +320,8 @@ void VerifySelectivityEstimates(MEM_ROOT *mem_root, CHARSET_INFO *charset,
   EXPECT_FALSE(histogram->build_histogram(key_frequencies, number_of_buckets));
 
   ha_rows total_frequency = 0;
-  MY_COMPILER_DIAGNOSTIC_PUSH()
-  MY_COMPILER_GCC_DIAGNOSTIC_IGNORE("-Wunused-variable")
-  for (const auto &[key, frequency] : key_frequencies) {
-    MY_COMPILER_DIAGNOSTIC_POP()
+  for (const auto &[key, frequency] : key_frequencies)
     total_frequency += frequency;
-  }
 
   const double max_abs_error =
       2.0 / static_cast<double>(number_of_buckets) + 0.00000001;

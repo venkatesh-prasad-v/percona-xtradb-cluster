@@ -42,7 +42,6 @@
 #include <vector>
 
 /* MySQL includes */
-#include "my_bit.h"
 #include "my_stacktrace.h"
 #include "my_sys.h"
 #include "mysql/thread_pool_priv.h"
@@ -220,9 +219,6 @@ static Rdb_index_stats_thread rdb_is_thread;
 static Rdb_manual_compaction_thread rdb_mc_thread;
 
 static Rdb_drop_index_thread rdb_drop_idx_thread;
-// List of table names (using regex) that are exceptions to the strict
-// collation check requirement.
-static Regex_list_handler *rdb_collation_exceptions;
 
 static const char *rdb_get_error_messages(int error);
 
@@ -652,11 +648,6 @@ static void rocksdb_set_delayed_write_rate(THD *thd, struct SYS_VAR *var,
 static void rocksdb_set_max_latest_deadlocks(THD *thd, struct SYS_VAR *var,
                                              void *var_ptr, const void *save);
 
-static void rdb_set_collation_exception_list(const char *exception_list);
-static void rocksdb_set_collation_exception_list(THD *thd, struct SYS_VAR *var,
-                                                 void *var_ptr,
-                                                 const void *save);
-
 static int rocksdb_validate_update_cf_options(THD *thd, struct SYS_VAR *var,
                                               void *save,
                                               st_mysql_value *value);
@@ -777,9 +768,7 @@ static char *rocksdb_checkpoint_name = nullptr;
 static char *rocksdb_block_cache_trace_options_str = nullptr;
 static char *rocksdb_trace_options_str = nullptr;
 static bool rocksdb_signal_drop_index_thread = false;
-static bool rocksdb_strict_collation_check = true;
 static bool rocksdb_ignore_unknown_options = true;
-static char *rocksdb_strict_collation_exceptions = nullptr;
 static bool rocksdb_collect_sst_properties = true;
 static bool rocksdb_force_flush_memtable_now_var = true;
 static bool rocksdb_force_flush_memtable_and_lzero_now_var = false;
@@ -801,7 +790,6 @@ static uint32_t rocksdb_validate_tables = 1;
 #endif  // defined(ROCKSDB_INCLUDE_VALIDATE_TABLES) &&
         // ROCKSDB_INCLUDE_VALIDATE_TABLES
 static char *rocksdb_datadir = nullptr;
-static char *rocksdb_fs_uri;
 static uint32_t rocksdb_max_bottom_pri_background_compactions = 0;
 static int rocksdb_block_cache_numshardbits = -1;
 static uint32_t rocksdb_table_stats_sampling_pct =
@@ -1041,12 +1029,6 @@ rdb_init_rocksdb_tbl_options(void) {
       new rocksdb::BlockBasedTableOptions());
   o->block_size = RDB_DEFAULT_BLOCK_SIZE;
   return o;
-}
-
-static rocksdb::Env *GetCompositeEnv(std::shared_ptr<rocksdb::FileSystem> fs) {
-  static std::shared_ptr<rocksdb::Env> composite_env =
-      rocksdb::NewCompositeEnv(fs);
-  return composite_env.get();
 }
 
 /* DBOptions contains Statistics and needs to be destructed last */
@@ -2332,22 +2314,6 @@ static MYSQL_SYSVAR_BOOL(ignore_unknown_options, rocksdb_ignore_unknown_options,
                          "Enable ignoring unknown options passed to RocksDB",
                          nullptr, nullptr, true);
 
-/*
-  TODO(herman) - Both strict_collation_check and strict_collation_exceptions can
-  be deprecated now that SKs support index lookups for all collations.
-*/
-static MYSQL_SYSVAR_BOOL(strict_collation_check, rocksdb_strict_collation_check,
-                         PLUGIN_VAR_RQCMDARG,
-                         "Enforce case sensitive collation for MyRocks indexes",
-                         nullptr, nullptr, true);
-
-static MYSQL_SYSVAR_STR(strict_collation_exceptions,
-                        rocksdb_strict_collation_exceptions,
-                        PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_MEMALLOC,
-                        "Regex that describes set of tables that are excluded "
-                        "from the case sensitive collation enforcement",
-                        nullptr, rocksdb_set_collation_exception_list, "");
-
 static MYSQL_SYSVAR_BOOL(collect_sst_properties, rocksdb_collect_sst_properties,
                          PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_READONLY,
                          "Enables collecting SST file properties on each flush",
@@ -2462,10 +2428,6 @@ static MYSQL_SYSVAR_STR(datadir, rocksdb_datadir,
                         PLUGIN_VAR_OPCMDARG | PLUGIN_VAR_READONLY,
                         "RocksDB data directory", nullptr, nullptr,
                         "./.rocksdb");
-
-static MYSQL_SYSVAR_STR(fs_uri, rocksdb_fs_uri,
-                        PLUGIN_VAR_OPCMDARG | PLUGIN_VAR_READONLY,
-                        "Custom filesystem URI", nullptr, nullptr, nullptr);
 
 static MYSQL_SYSVAR_UINT(
     table_stats_sampling_pct, rocksdb_table_stats_sampling_pct,
@@ -2825,8 +2787,6 @@ static struct SYS_VAR *rocksdb_system_variables[] = {
     MYSQL_SYSVAR(signal_drop_index_thread),
     MYSQL_SYSVAR(pause_background_work),
     MYSQL_SYSVAR(ignore_unknown_options),
-    MYSQL_SYSVAR(strict_collation_check),
-    MYSQL_SYSVAR(strict_collation_exceptions),
     MYSQL_SYSVAR(collect_sst_properties),
     MYSQL_SYSVAR(force_flush_memtable_now),
     MYSQL_SYSVAR(force_flush_memtable_and_lzero_now),
@@ -2848,7 +2808,6 @@ static struct SYS_VAR *rocksdb_system_variables[] = {
     MYSQL_SYSVAR(print_snapshot_conflict_queries),
 
     MYSQL_SYSVAR(datadir),
-    MYSQL_SYSVAR(fs_uri),
     MYSQL_SYSVAR(create_checkpoint),
     MYSQL_SYSVAR(create_temporary_checkpoint),
     MYSQL_SYSVAR(disable_file_deletions),
@@ -3976,7 +3935,7 @@ class Rdb_transaction {
     Check whether secondary key value is duplicate or not
 
     @param[in] table_arg         the table currently working on
-    @param[in  key_def           the key_def is being checked
+    @param[in] key_def           the key_def is being checked
     @param[in] key               secondary key storage data
     @param[out] sk_info          hold secondary key memcmp datas(new/old)
     @return
@@ -6402,19 +6361,6 @@ static int rocksdb_init_internal(void *const p) {
     }
   }
 
-  rocksdb::Status s;
-  if (rocksdb_fs_uri) {
-    std::shared_ptr<rocksdb::FileSystem> fs;
-    s = rocksdb::FileSystem::CreateFromString(rocksdb::ConfigOptions(),
-                                              rocksdb_fs_uri, &fs);
-    if (fs == nullptr) {
-      LogPluginErrMsg(ERROR_LEVEL, 0, "Loading custom file system failed: %s\n",
-                      s.ToString().c_str());
-      DBUG_RETURN(HA_EXIT_FAILURE);
-    }
-    rocksdb_db_options->env = GetCompositeEnv(fs);
-  }
-
   DBUG_EXECUTE_IF("rocksdb_init_failure_files_corruption",
                   { DBUG_RETURN(HA_EXIT_FAILURE); });
 
@@ -6473,13 +6419,6 @@ static int rocksdb_init_internal(void *const p) {
   rdb_collation_data_mutex.init(rdb_collation_data_mutex_key,
                                 MY_MUTEX_INIT_FAST);
   rdb_mem_cmp_space_mutex.init(rdb_mem_cmp_space_mutex_key, MY_MUTEX_INIT_FAST);
-
-#if defined(HAVE_PSI_INTERFACE)
-  rdb_collation_exceptions =
-      new Regex_list_handler(key_rwlock_collation_exception_list);
-#else
-  rdb_collation_exceptions = new Regex_list_handler();
-#endif
 
   rdb_sysvars_mutex.init(rdb_sysvars_psi_mutex_key, MY_MUTEX_INIT_FAST);
   rdb_block_cache_resize_mutex.init(rdb_block_cache_resize_mutex_key,
@@ -6550,8 +6489,8 @@ static int rocksdb_init_internal(void *const p) {
   rocksdb_db_options->delayed_write_rate = rocksdb_delayed_write_rate;
 
   std::shared_ptr<Rdb_logger> myrocks_logger = std::make_shared<Rdb_logger>();
-  s = rocksdb::CreateLoggerFromOptions(rocksdb_datadir, *rocksdb_db_options,
-                                       &rocksdb_db_options->info_log);
+  rocksdb::Status s = rocksdb::CreateLoggerFromOptions(
+      rocksdb_datadir, *rocksdb_db_options, &rocksdb_db_options->info_log);
   if (s.ok()) {
     myrocks_logger->SetRocksDBLogger(rocksdb_db_options->info_log);
   }
@@ -6594,10 +6533,11 @@ static int rocksdb_init_internal(void *const p) {
       soptions.use_direct_reads = true;
       check_status = env->NewSequentialFile(fname, &file, soptions);
     } else {
-      {
-        std::unique_ptr<rocksdb::WritableFile> file;
-        soptions.use_direct_writes = true;
-        check_status = env->NewWritableFile(fname, &file, soptions);
+      std::unique_ptr<rocksdb::WritableFile> file;
+      soptions.use_direct_writes = true;
+      check_status = env->NewWritableFile(fname, &file, soptions);
+      if (file != nullptr) {
+        file->Close();
       }
       env->DeleteFile(fname);
     }
@@ -7042,8 +6982,6 @@ static int rocksdb_init_internal(void *const p) {
   DBUG_EXECUTE_IF("rocksdb_init_failure_threads",
                   { DBUG_RETURN(HA_EXIT_FAILURE); });
 
-  rdb_set_collation_exception_list(rocksdb_strict_collation_exceptions);
-
   if (rocksdb_pause_background_work) {
     rdb->PauseBackgroundWork();
   }
@@ -7185,11 +7123,6 @@ static int rocksdb_shutdown(bool minimalShutdown) {
   rdb_sysvars_mutex.destroy();
   rdb_block_cache_resize_mutex.destroy();
   rdb_bottom_pri_background_compactions_resize_mutex.destroy();
-
-  if (!minimalShutdown) {
-    delete rdb_collation_exceptions;
-    rdb_collation_exceptions = nullptr;
-  }
 
   rdb_collation_data_mutex.destroy();
   rdb_mem_cmp_space_mutex.destroy();
@@ -7643,7 +7576,7 @@ static handler *rocksdb_create_handler(my_core::handlerton *const hton,
   if (partitioned) {
     ha_rockspart *file = new (mem_root) ha_rockspart(hton, table_arg);
     if (file && file->init_partitioning(mem_root)) {
-      destroy(file);
+      destroy_at(file);
       return (nullptr);
     }
     return (file);
@@ -8947,9 +8880,10 @@ bool ha_rocksdb::contains_foreign_key(THD *const thd) {
   splits the normalized table name of <dbname>.<tablename>#P#<part_no> into
   the <dbname>, <tablename> and <part_no> components.
 
-  @param dbbuf returns database name/table_schema
-  @param tablebuf returns tablename
-  @param partitionbuf returns partition suffix if there is one
+  @param fullname  normalized table name
+  @param db        returns database name/table_schema
+  @param table     returns table name
+  @param partition returns partition suffix if there is one
   @return HA_EXIT_SUCCESS on success, non-zero on failure to split
 */
 int rdb_split_normalized_tablename(const std::string &fullname,
@@ -10779,10 +10713,10 @@ int ha_rocksdb::get_pk_for_update(struct update_row_info *const row_info) {
 /**
    Check the specified primary key value is unique and also lock the row
 
-  @param[in] row_info         hold all data for update row, such as old row
-                              data and new row data
-  @param[out] found           whether the primary key exists before.
-  @param[out] pk_changed      whether primary key is changed
+  @param[in] row_info           hold all data for update row, such as old row
+                                data and new row data
+  @param[out] found             whether the primary key exists before.
+  @param[out] skip_unique_check whether to skip key uniqueness check
   @return
     HA_EXIT_SUCCESS  OK
     other            HA_ERR error code (can be SE-specific)
@@ -11207,7 +11141,7 @@ int ha_rocksdb::finalize_bulk_load(bool print_client_error) {
   Update an existing primary key record or write a new primary key record
 
   @param[in] kd                the primary key is being update/write
-  @param[in] update_row_info   hold all row data, such as old row data and
+  @param[in] row_info          hold all row data, such as old row data and
                                new row data
   @param[in] pk_changed        whether primary key is changed
   @return
@@ -16040,7 +15974,7 @@ bool ha_rocksdb::check_bloom_and_set_bounds(
    If bloom filter does not exist, return value does not matter because
    RocksDB does not use bloom filter internally.
 
-  @param kd
+  @param kd           Index information.
   @param eq_cond      Equal condition part of the key. This always includes
                       system index id (4 bytes).
 */
@@ -16397,27 +16331,6 @@ static void rocksdb_set_max_latest_deadlocks(THD *thd, struct SYS_VAR *var,
     rdb->SetDeadlockInfoBufferSize(rocksdb_max_latest_deadlocks);
   }
   RDB_MUTEX_UNLOCK_CHECK(rdb_sysvars_mutex);
-}
-
-static void rdb_set_collation_exception_list(const char *const exception_list) {
-  assert(rdb_collation_exceptions != nullptr);
-
-  if (!rdb_collation_exceptions->set_patterns(exception_list,
-                                              get_regex_flags())) {
-    warn_about_bad_patterns(rdb_collation_exceptions,
-                            "strict_collation_exceptions");
-  }
-}
-
-static void rocksdb_set_collation_exception_list(THD *const thd,
-                                                 struct SYS_VAR *const var,
-                                                 void *const var_ptr,
-                                                 const void *const save) {
-  const char *const val = *static_cast<const char *const *>(save);
-
-  rdb_set_collation_exception_list(val == nullptr ? "" : val);
-
-  *static_cast<const char **>(var_ptr) = val;
 }
 
 static int mysql_value_to_bool(struct st_mysql_value *value,

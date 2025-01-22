@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -75,8 +76,18 @@ class TransporterFacade : public TransporterCallback,
   TransporterFacade(GlobalDictCache *cache);
   ~TransporterFacade() override;
 
-  int start_instance(NodeId, const ndb_mgm_configuration *);
+  int start_instance(NodeId, const ndb_mgm_configuration *,
+                     bool tls_req = false);
   void stop_instance();
+
+  void configure_tls(const char *, int type, int mgmLevel);
+  void api_configure_tls(const char *searchPath, int mgmLevel) {
+    configure_tls(searchPath, NODE_TYPE_API, mgmLevel);
+  }
+  void mgm_configure_tls(const char *searchPath, int mgmLevel) {
+    configure_tls(searchPath, NODE_TYPE_MGM, mgmLevel);
+  }
+  const char *get_tls_certificate_path() const;
 
   /*
     (Re)configure the TransporterFacade
@@ -231,6 +242,22 @@ class TransporterFacade : public TransporterCallback,
   trp_client *m_poll_queue_head;  // First in queue
   trp_client *m_poll_queue_tail;  // Last in queue
   Uint32 m_poll_waiters;          // Number of clients in queue
+
+#ifdef NDB_MUTEX_DEADLOCK_DETECTOR
+  /**
+   * The poll owner locks the trp_clients delivered to in the delivery order.
+   * Deadlocks are avoided as there is only a single poll_owner at any time.
+   * However, the poll-owner does not hold the poll_mutex while being the
+   * poll-owner. Thus the DEADLOCK_DETECTOR is not able to detect this
+   * deadlock protection by traversing its internal lock-graphs.
+   *
+   * We need to make the DEADLOCK_DETECTOR aware of the pseudo lock
+   * being held by inserting a 'mutex_state' representing the poll-right
+   * protection when the 'right' is owned.
+   */
+  struct ndb_mutex_state *m_poll_owner_region;
+#endif
+
   /* End poll owner stuff */
 
   // heart beat received from a node (e.g. a signal came)
@@ -583,6 +610,11 @@ class TransporterFacade : public TransporterCallback,
    * of sending the data on these transporters.
    */
   TrpBitmask m_has_data_trps;
+
+  /* TLS Configuration */
+  const char *m_tls_search_path;
+  int m_tls_node_type;
+  int m_mgm_tls_level;
 };
 
 inline void TransporterFacade::lock_poll_mutex() {

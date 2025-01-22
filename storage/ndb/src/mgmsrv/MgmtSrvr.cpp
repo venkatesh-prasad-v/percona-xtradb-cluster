@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -24,6 +25,7 @@
 
 #include <ndb_global.h>
 #include <cstring>
+#include "openssl/ssl.h"
 #include "util/require.h"
 
 #include "ConfigManager.hpp"
@@ -65,6 +67,7 @@
 #include <signaldata/TamperOrd.hpp>
 #include <signaldata/TestOrd.hpp>
 #include "NdbTCP.h"
+#include "portlib/ndb_openssl_version.h"
 #include "portlib/ndb_sockaddr.h"
 
 #include <NdbConfig.h>
@@ -80,7 +83,6 @@
 
 #include <SignalSender.hpp>
 
-#include <BufferedLogHandler.hpp>
 #include <LogBuffer.hpp>
 
 int g_errorInsert = 0;
@@ -95,6 +97,9 @@ int g_errorInsert = 0;
       return result;                             \
     }                                            \
   }
+
+static constexpr bool openssl_version_ok =
+    (OPENSSL_VERSION_NUMBER >= NDB_TLS_MINIMUM_OPENSSL);
 
 void *MgmtSrvr::logLevelThread_C(void *m) {
   MgmtSrvr *mgm = (MgmtSrvr *)m;
@@ -223,6 +228,8 @@ MgmtSrvr::MgmtSrvr(const MgmtOpts &opts)
       m_local_config(NULL),
       _ownReference(0),
       m_config_manager(NULL),
+      m_tls_search_path(opts.tls_search_path),
+      m_client_tls_req(opts.mgm_tls),
       m_need_restart(false),
       theFacade(NULL),
       _isStopThread(false),
@@ -230,8 +237,7 @@ MgmtSrvr::MgmtSrvr(const MgmtOpts &opts)
       m_event_listner(this),
       m_master_node(0),
       _logLevelThread(NULL),
-      m_version_string(ndbGetOwnVersionString()),
-      m_async_cluster_logging(false) {
+      m_version_string(ndbGetOwnVersionString()) {
   DBUG_ENTER("MgmtSrvr::MgmtSrvr");
 
   m_local_config_mutex = NdbMutex_Create();
@@ -344,17 +350,17 @@ bool MgmtSrvr::init() {
 
   assert(_ownNodeId);
 
-  DBUG_RETURN(true);
-}
-
-bool MgmtSrvr::start_transporter(const Config *config) {
-  DBUG_ENTER("MgmtSrvr::start_transporter");
-
   theFacade = new TransporterFacade(0);
   if (theFacade == 0) {
     g_eventLogger->error("Could not create TransporterFacade.");
     DBUG_RETURN(false);
   }
+
+  DBUG_RETURN(true);
+}
+
+bool MgmtSrvr::start_transporter(const Config *config) {
+  DBUG_ENTER("MgmtSrvr::start_transporter");
 
   assert(_blockNumber == 0);  // Blocknumber shouldn't been allocated yet
 
@@ -378,7 +384,10 @@ bool MgmtSrvr::start_transporter(const Config *config) {
    */
   m_config_manager->set_facade(theFacade);
 
-  if (theFacade->start_instance(_ownNodeId, config->m_configuration) < 0) {
+  int r = theFacade->start_instance(_ownNodeId, config->m_configuration,
+                                    require_cert());
+  if (r < 0) {
+    require(r != -2); /* TLS certificate required but not found */
     g_eventLogger->error("Failed to start transporter");
     delete theFacade;
     theFacade = 0;
@@ -400,8 +409,8 @@ bool MgmtSrvr::start_transporter(const Config *config) {
   DBUG_RETURN(true);
 }
 
-bool MgmtSrvr::start_mgm_service(const Config *config) {
-  DBUG_ENTER("MgmtSrvr::start_mgm_service");
+bool MgmtSrvr::get_connection_config(const Config *config) {
+  DBUG_ENTER("MgmtSrvr::get_connection_config");
 
   assert(m_port == 0);
   {
@@ -424,7 +433,27 @@ bool MgmtSrvr::start_mgm_service(const Config *config) {
       g_eventLogger->error("PortNumber not defined for node %d", _ownNodeId);
       DBUG_RETURN(false);
     }
+
+    // Find the TLS requirement level
+    Uint32 requireCert = 0;
+    Uint32 requireTls = 0;
+
+    iter.get(CFG_MGM_REQUIRE_TLS, &requireTls);
+    iter.get(CFG_NODE_REQUIRE_CERT, &requireCert);
+
+    if ((requireTls || requireCert) && !openssl_version_ok) {
+      g_eventLogger->error(
+          "Unsupported OpenSSL 1.0.x. This server does not support TLS.");
+      DBUG_RETURN(false);
+    }
+    m_require_tls = requireTls;
+    m_require_cert = requireCert;
   }
+  DBUG_RETURN(true);
+}
+
+bool MgmtSrvr::start_mgm_service(const Config *config) {
+  DBUG_ENTER("MgmtSrvr::start_mgm_service");
 
   unsigned short port = m_port;
   DBUG_PRINT("info", ("Using port %d", port));
@@ -506,6 +535,28 @@ bool MgmtSrvr::start_mgm_service(const Config *config) {
 bool MgmtSrvr::start() {
   DBUG_ENTER("MgmtSrvr::start");
 
+  /* Configure TlsKeyManager */
+  require(m_tls_search_path);
+  theFacade->mgm_configure_tls(m_tls_search_path, m_client_tls_req);
+
+  if (!get_connection_config(m_local_config)) {
+    g_eventLogger->error("Shutting down. Failed read config.");
+    DBUG_RETURN(false);
+  }
+
+  /* Check for required certificate */
+  if (require_cert()) {
+    TlsKeyManager stubKeyManager;
+    stubKeyManager.init(m_tls_search_path, 0, NODE_TYPE_MGM);
+    if (!stubKeyManager.ctx()) {
+      g_eventLogger->error(
+          openssl_version_ok
+              ? "This node does not have a valid TLS certificate."
+              : "This version of OpenSSL is not supported.");
+      DBUG_RETURN(false);
+    }
+  }
+
   /* Start transporter */
   if (!start_transporter(m_local_config)) {
     g_eventLogger->error("Failed to start transporter!");
@@ -518,13 +569,16 @@ bool MgmtSrvr::start() {
     DBUG_RETURN(false);
   }
 
+  g_eventLogger->info(
+      require_tls() ? "This server will require all MGM clients to use TLS"
+                    : "Not requiring TLS");
+
   /* Use local MGM port for TransporterRegistry */
   if (!connect_to_self()) {
     g_eventLogger->error("Failed to connect to ourself!");
     DBUG_RETURN(false);
   }
 
-  set_async_cluster_logging(true);
   /* Start config manager */
   if (!m_config_manager->start()) {
     g_eventLogger->error("Failed to start ConfigManager");
@@ -538,10 +592,6 @@ bool MgmtSrvr::start() {
                                      "MgmtSrvr_Loglevel", NDB_THREAD_PRIO_LOW);
 
   DBUG_RETURN(true);
-}
-
-void MgmtSrvr::set_async_cluster_logging(bool async_cluster_logging) {
-  m_async_cluster_logging = true;
 }
 
 void MgmtSrvr::configure_eventlogger(const BaseString &logdestination) const {
@@ -561,28 +611,11 @@ void MgmtSrvr::configure_eventlogger(const BaseString &logdestination) const {
     BaseString params;
     if (v_type_params.size() >= 2) params = v_type_params[1];
 
-    LogHandler *handler = NULL;
+    LogHandler *handler = nullptr;
     if (type == "FILE") {
       char *default_file_name = NdbConfig_ClusterLogFileName(_ownNodeId);
-      FileLogHandler *file_handler = new FileLogHandler(default_file_name);
+      handler = new FileLogHandler(default_file_name);
       free(default_file_name);
-
-      if (m_async_cluster_logging) {
-        /**
-         *  Log to a buffered log handler, and pass the file log handler
-         *  as the destination log handler.
-         */
-        file_handler->parseParams(params);
-        if (!file_handler->is_open() && !file_handler->open()) {
-          ndbout_c("INTERNAL ERROR: Could not create log handler for: '%s'",
-                   logdestinations[i].c_str());
-          continue;
-        }
-
-        handler = new BufferedLogHandler(file_handler);
-      } else {
-        handler = file_handler;
-      }
     } else if (type == "CONSOLE") {
       handler = new ConsoleLogHandler();
     }
@@ -615,6 +648,7 @@ void MgmtSrvr::configure_eventlogger(const BaseString &logdestination) const {
       continue;
     }
   }
+  g_eventLogger->startAsync();
 }
 
 void MgmtSrvr::setClusterLog(const Config *config) {
@@ -895,6 +929,8 @@ MgmtSrvr::~MgmtSrvr() {
     delete m_config_manager;
     m_config_manager = 0;
   }
+  /* Stop async log thread */
+  g_eventLogger->stopAsync();
 
   this->close();  // close trp_client before stopping TransporterFacade
 
@@ -907,8 +943,6 @@ MgmtSrvr::~MgmtSrvr() {
 
   delete m_local_config;
 
-  if (m_opts.bind_address != nullptr)
-    free(const_cast<char *>(m_opts.bind_address));
   NdbMutex_Destroy(m_local_config_mutex);
   NdbMutex_Destroy(m_reserved_nodes_mutex);
 }
@@ -1112,7 +1146,8 @@ int MgmtSrvr::sendStopMgmd(NodeId nodeId, bool abort, bool stop, bool restart,
   NdbMgmHandle h = ndb_mgm_create_handle();
   if (h && connect_string.length() > 0) {
     ndb_mgm_set_connectstring(h, connect_string.c_str());
-    if (ndb_mgm_connect(h, 1, 0, 0)) {
+    ndb_mgm_set_ssl_ctx(h, ssl_ctx());
+    if (ndb_mgm_connect_tls(h, 1, 0, 0, m_client_tls_req)) {
       DBUG_PRINT("info", ("failed ndb_mgm_connect"));
       ndb_mgm_destroy_handle(&h);
       return SEND_OR_RECEIVE_FAILED;
@@ -3466,7 +3501,6 @@ int MgmtSrvr::alloc_node_id_req(NodeId free_node_id,
 }
 
 enum class HostnameMatch {
-  no_resolve,      // failure: could not resolve hostname
   no_match,        // failure: hostname does not match socket address
   ok_exact_match,  // success: exact match
   ok_wildcard,     // success: match not required
@@ -3484,7 +3518,7 @@ static HostnameMatch match_hostname(const ndb_sockaddr *client_addr,
   // - compare the resolved address with the clients.
   ndb_sockaddr resolved_addr;
   if (Ndb_getAddr(&resolved_addr, config_hostname) != 0)
-    return HostnameMatch::no_resolve;
+    return HostnameMatch::no_match;
 
   // Special case for client connecting on loopback address, check if it
   // can use this hostname by trying to bind the configured hostname. If this
@@ -3508,14 +3542,16 @@ static HostnameMatch match_hostname(const ndb_sockaddr *client_addr,
 /**
    @brief Build list of nodes in configuration
 
+   @param node_id 0 for any, otherwise a specific node id
+   @param type  Type of nodes to list (MGM/DATA/API)
    @param config_nodes List of nodes
+   @param error_code Error code
+   @param error_string Error string
    @return true if list was filled properly, false otherwise
  */
-bool MgmtSrvr::build_node_list_from_config(NodeId node_id,
-                                           ndb_mgm_node_type type,
-                                           Vector<ConfigNode> &config_nodes,
-                                           int &error_code,
-                                           BaseString &error_string) const {
+bool MgmtSrvr::build_node_type_list_from_config(
+    NodeId node_id, ndb_mgm_node_type type, Vector<ConfigNode> &config_nodes,
+    int &error_code, BaseString &error_string) const {
   Guard g(m_local_config_mutex);
 
   ConfigIter iter(m_local_config, CFG_SECTION_NODE);
@@ -3569,13 +3605,42 @@ bool MgmtSrvr::build_node_list_from_config(NodeId node_id,
   return true;
 }
 
-int MgmtSrvr::find_node_type(NodeId node_id, ndb_mgm_node_type type,
-                             const ndb_sockaddr *client_addr,
-                             const Vector<ConfigNode> &config_nodes,
-                             Vector<PossibleNode> &nodes, int &error_code,
-                             BaseString &error_string) {
-  const char *found_config_hostname = nullptr;
-  bool found_unresolved_hosts = false;
+/**
+   Given a list of nodes from config, find all that match the
+   supplied client address and (optional) node id
+
+   @param node_id If non zero then specifies required nodeid.  Can only be
+                  one match.
+                  If zero then any nodeid matches, return all.
+   @param type Type of node being matched (DB|MGMD|API)
+   @param client_addr Address client is connecting from
+   @param config_nodes List of nodes matching type from config
+   @param node_matches Output list of nodes matching client address
+ */
+void MgmtSrvr::match_client_addr_to_config_nodes(
+    NodeId node_id, ndb_mgm_node_type type, const ndb_sockaddr *client_addr,
+    const Vector<ConfigNode> &config_nodes,
+    Vector<PossibleNode> &node_matches) {
+  /**
+   * Examine every candidate node from config to see if it can
+   * be a match for the connecting client's address.
+   *
+   * If node_id is specified then we return the first match.
+   * If node_id is not specified then all matches are returned
+   *
+   * Types of config vs client address match :
+   *   Wildcard match : Config has no address - matches anything
+   *   Exact match    : Config has address which matches client's when
+   *                    resolved (can also be loopback)
+   *   No match       : Config has address which does not match client's
+   *                    when resolved.
+   *
+   * The resulting vector of matching nodes can be length :
+   *   0  No config nodes match client address
+   *   1  One config node matches client address
+   *  >1  Multiple config nodes match client address
+   *      Exact matches are placed first in the Vector
+   */
 
   for (unsigned i = 0; i < config_nodes.size(); i++) {
     const ConfigNode &node = config_nodes[i];
@@ -3590,97 +3655,35 @@ int MgmtSrvr::find_node_type(NodeId node_id, ndb_mgm_node_type type,
     const HostnameMatch matchType =
         match_hostname(client_addr, config_hostname);
     switch (matchType) {
-      case HostnameMatch::no_resolve:
-        found_config_hostname = config_hostname;
-        found_unresolved_hosts = true;
-        break;
-
       case HostnameMatch::no_match:
-        found_config_hostname = config_hostname;
+        /* Config address not resolvable or resolvable and
+         * - Client address is loopback but we cannot bind the config address
+         * - Client address and resolved config are not IPv6 equal
+         */
         break;
 
       case HostnameMatch::ok_wildcard:
-        nodes.push_back({current_node_id, "", false});
+        /* Config hostname is null or empty */
+        node_matches.push_back({current_node_id, "", false});
         break;
 
       case HostnameMatch::ok_exact_match: {
-        found_config_hostname = config_hostname;
-
+        /* Config address resolvable
+         * - Client address is loopback and we can bind the config address
+         * - Client address and resolved config are IPv6 equal
+         */
         unsigned int pos = 0;
         // Insert this node into the list ahead of the non-exact matches
-        for (; pos < nodes.size() && nodes[pos].exact_match; pos++)
+        for (; pos < node_matches.size() && node_matches[pos].exact_match;
+             pos++)
           ;
-        nodes.push({current_node_id, config_hostname, true}, pos);
+        node_matches.push({current_node_id, config_hostname, true}, pos);
         break;
       }
     }
 
-    if (node_id) break;
+    if (node_id) break; /* Found the only match */
   }
-
-  if (nodes.size() != 0) {
-    return 0;
-  }
-
-  if (found_unresolved_hosts) {
-    error_code = NDB_MGM_ALLOCID_CONFIG_RETRY;
-
-    BaseString type_string;
-    const char *alias, *str = nullptr;
-    char addr_buf[NDB_ADDR_STRLEN];
-    alias = ndb_mgm_get_node_type_alias_string(type, &str);
-    type_string.assfmt("%s(%s)", alias, str);
-
-    char *addr_str = Ndb_inet_ntop(client_addr, addr_buf, sizeof(addr_buf));
-
-    error_string.appfmt(
-        "No configured host found of node type %s for "
-        "connection from ip %s. Some hostnames are currently "
-        "unresolvable. Can be retried.",
-        type_string.c_str(), addr_str);
-    return -1;
-  }
-
-  /*
-    lock on m_configMutex held because found_config_hostname may have
-    reference into config structure
-  */
-  error_code = NDB_MGM_ALLOCID_CONFIG_MISMATCH;
-  if (node_id) {
-    if (found_config_hostname) {
-      char addr_buf[NDB_ADDR_STRLEN];
-      {
-        // Append error describing which host the faulty connection was from
-        char *addr_str = Ndb_inet_ntop(client_addr, addr_buf, sizeof(addr_buf));
-        error_string.appfmt("Connection with id %d done from wrong host ip %s,",
-                            node_id, addr_str);
-      }
-      {
-        // Append error describing which was the expected host
-        ndb_sockaddr config_addr;
-        int r_config_addr = Ndb_getAddr(&config_addr, found_config_hostname);
-        char *addr_str =
-            Ndb_inet_ntop(&config_addr, addr_buf, sizeof(addr_buf));
-        error_string.appfmt(" expected %s(%s).", found_config_hostname,
-                            r_config_addr ? "lookup failed" : addr_str);
-      }
-      return -1;
-    }
-    error_string.appfmt("No node defined with id=%d in config file.", node_id);
-    return -1;
-  }
-
-  // node_id == 0 and nodes.size() == 0
-  if (found_config_hostname) {
-    char addr_buf[NDB_ADDR_STRLEN];
-    char *addr_str = Ndb_inet_ntop(client_addr, addr_buf, sizeof(addr_buf));
-    error_string.appfmt("Connection done from wrong host ip %s.",
-                        (client_addr) ? addr_str : "");
-    return -1;
-  }
-
-  error_string.append("No nodes defined in config file.");
-  return -1;
 }
 
 int MgmtSrvr::try_alloc(NodeId id, ndb_mgm_node_type type, Uint32 timeout_ms,
@@ -3859,21 +3862,73 @@ bool MgmtSrvr::alloc_node_id_impl(NodeId &nodeid, enum ndb_mgm_node_type type,
     }
   }
 
-  // Build list of nodes fom configuration, this is done as a separate step
-  // in order to hold the config mutex only for a short time and also
-  // avoid holding it while resolving addresses.
+  // Build list of nodes matching (type[, nodeid]), from configuration,
+  // this is done as a separate step in order to hold the config mutex
+  // only for a short time and also avoid holding it while resolving
+  // addresses.
   Vector<ConfigNode> config_nodes;
-  if (!build_node_list_from_config(nodeid, type, config_nodes, error_code,
-                                   error_string)) {
+  if (!build_node_type_list_from_config(nodeid, type, config_nodes, error_code,
+                                        error_string)) {
     assert(error_string.length() > 0);
     return false;
   }
 
-  /* Find possible nodeids */
+  if (config_nodes.size() == 0) {
+    /* No nodes in config matching type [and nodeid] */
+    error_code = NDB_MGM_ALLOCID_CONFIG_MISMATCH;
+    if (nodeid != 0) {
+      error_string.appfmt("No node defined with id=%d in config file.", nodeid);
+      return false;
+    } else {
+      error_string.append("No nodes defined in config file.");
+      return false;
+    }
+  }
+
+  /* Choose subset of candidates matching client address */
   Vector<PossibleNode> nodes;
-  if (find_node_type(nodeid, type, client_addr, config_nodes, nodes, error_code,
-                     error_string))
+  match_client_addr_to_config_nodes(nodeid, type, client_addr, config_nodes,
+                                    nodes);
+
+  if (nodes.size() == 0) {
+    /**
+     * No candidate node ids matched client address
+     *
+     * This could indicate :
+     *   1 Temporary name resolution misalignment
+     *   2 Permanent name resolution misalignment
+     *   3 Attempt to connect from incorrect location
+     *
+     * To cover case 1, a temporary 'retry' error is returned rather
+     * than a permanent error.
+     */
+    error_code = NDB_MGM_ALLOCID_CONFIG_RETRY;
+    char addr_buf[NDB_ADDR_STRLEN];
+    char *addr_str = Ndb_inet_ntop(client_addr, addr_buf, sizeof(addr_buf));
+
+    if (nodeid != 0) {
+      // Append error describing which host the faulty connection was from
+      error_string.appfmt("Connection with id %d done from host ip %s,", nodeid,
+                          addr_str);
+
+      // Append error describing which was the expected host
+      ndb_sockaddr config_addr;
+      assert(config_nodes.size() == 1); /* Single matching nodeid from config */
+      const char *config_hostname = config_nodes[0].hostname.c_str();
+      int r_config_addr = Ndb_getAddr(&config_addr, config_hostname);
+      char *addr_str = Ndb_inet_ntop(&config_addr, addr_buf, sizeof(addr_buf));
+      error_string.appfmt(" not matching expected %s(%s).", config_hostname,
+                          r_config_addr ? "lookup failed" : addr_str);
+    } else {
+      /* nodeid == 0 */
+      error_string.appfmt(
+          "Connection done from host ip %s, not matching any (resolved) "
+          "configured address.",
+          (client_addr) ? addr_str : "");
+    }
+
     return false;
+  }
 
   // Print list of possible nodes
   for (unsigned i = 0; i < nodes.size(); i++) {
@@ -3882,7 +3937,7 @@ bool MgmtSrvr::alloc_node_id_impl(NodeId &nodeid, enum ndb_mgm_node_type type,
                          node.host.c_str(), node.exact_match);
   }
 
-  // nodes.size() == 0 handled inside find_node_type
+  // nodes.size() == 0 handled above
   assert(nodes.size() != 0);
 
   if (type == NDB_MGM_NODE_TYPE_MGM && nodes.size() > 1) {
@@ -4416,7 +4471,8 @@ bool MgmtSrvr::connect_to_self() {
              m_port);
   ndb_mgm_set_connectstring(mgm_handle, buf.c_str());
 
-  if (ndb_mgm_connect(mgm_handle, 0, 0, 0) < 0) {
+  ndb_mgm_set_ssl_ctx(mgm_handle, ssl_ctx());
+  if (ndb_mgm_connect_tls(mgm_handle, 0, 0, 0, m_client_tls_req) < 0) {
     g_eventLogger->warning("%d %s", ndb_mgm_get_latest_error(mgm_handle),
                            ndb_mgm_get_latest_error_desc(mgm_handle));
     ndb_mgm_destroy_handle(&mgm_handle);
@@ -4822,6 +4878,14 @@ bool MgmtSrvr::request_events(NdbNodeBitmask nodes, Uint32 reports_per_node,
   ss.unlock();
 
   return true;
+}
+
+void MgmtSrvr::tls_stat_increment(unsigned int idx) {
+  if (idx < sizeof(m_tls_stats)) m_tls_stats[idx]++;
+}
+
+void MgmtSrvr::tls_stat_decrement(unsigned int idx) {
+  if (idx < sizeof(m_tls_stats)) m_tls_stats[idx]--;
 }
 
 template class MutexVector<NodeId>;

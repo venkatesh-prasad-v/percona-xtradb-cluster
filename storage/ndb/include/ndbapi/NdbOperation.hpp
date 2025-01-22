@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -392,9 +393,9 @@ class NdbOperation {
    *                    the attribute, or a NULL pointer
    *                    (indicating error).
    */
-  NdbRecAttr *getValue(const char *anAttrName, char *aValue = 0);
-  NdbRecAttr *getValue(Uint32 anAttrId, char *aValue = 0);
-  NdbRecAttr *getValue(const NdbDictionary::Column *, char *val = 0);
+  NdbRecAttr *getValue(const char *anAttrName, char *aValue = nullptr);
+  NdbRecAttr *getValue(Uint32 anAttrId, char *aValue = nullptr);
+  NdbRecAttr *getValue(const NdbDictionary::Column *, char *val = nullptr);
 
   /**
    * Define an attribute to set or update in query.
@@ -905,9 +906,6 @@ class NdbOperation {
    *
    * @return method number where the error occurred.
    */
-#ifndef DOXYGEN_SHOULD_SKIP_DEPRECATED
-  int getNdbErrorLine();
-#endif
   int getNdbErrorLine() const;
 
   /**
@@ -1316,7 +1314,8 @@ class NdbOperation {
    ******************************************************************************/
 
   virtual int equal_impl(const NdbColumnImpl *, const char *aValue);
-  virtual NdbRecAttr *getValue_impl(const NdbColumnImpl *, char *aValue = 0);
+  virtual NdbRecAttr *getValue_impl(const NdbColumnImpl *,
+                                    char *aValue = nullptr);
   NdbRecAttr *getValue_NdbRecord(const NdbColumnImpl *tAttrInfo, char *aValue);
   int setValue(const NdbColumnImpl *anAttrObject, const char *aValue);
   NdbBlob *getBlobHandle(NdbTransaction *aCon,
@@ -1591,12 +1590,6 @@ inline int NdbOperation::checkMagicNumber(bool b) {
 }
 
 inline void NdbOperation::setStartIndicator() { theStartIndicator = 1; }
-
-inline int NdbOperation::getNdbErrorLine() {
-  // delegate to overloaded const function for same semantics
-  const NdbOperation *const cthis = this;
-  return cthis->NdbOperation::getNdbErrorLine();
-}
 
 inline int NdbOperation::getNdbErrorLine() const { return theErrorLine; }
 

@@ -1,15 +1,16 @@
-/* Copyright (c) 2009, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2009, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -44,7 +45,6 @@
 
 #include <TransporterRegistry.hpp>
 
-#include <ConfigRetriever.hpp>
 #include <LogLevel.hpp>
 
 #if defined NDB_SOLARIS
@@ -57,7 +57,12 @@
 #include <LogBuffer.hpp>
 #include <OutputStream.hpp>
 
+#include "util/ndb_openssl3_compat.h"
+
 #define JAM_FILE_ID 484
+
+static constexpr bool openssl_version_ok =
+    (OPENSSL_VERSION_NUMBER >= NDB_TLS_MINIMUM_OPENSSL);
 
 static void systemInfo(const Configuration &config, const LogLevel &logLevel) {
 #ifdef _WIN32
@@ -661,6 +666,10 @@ static int get_multithreaded_config(EmulatorData &ed) {
   // multithreaded is compiled in ndbd/ndbmtd for now
   if (!globalData.isNdbMt) {
     g_eventLogger->info("NDBMT: non-mt");
+    g_eventLogger->warning(
+        "Running ndbd with a single thread of signal execution.  "
+        "For multi-threaded signal execution run the ndbmtd binary.");
+
     return 0;
   }
 
@@ -926,7 +935,8 @@ void stop_async_log_func(NdbThread *thr, ThreadData &thr_args) {
 void ndbd_run(bool foreground, int report_fd, const char *connect_str,
               int force_nodeid, const char *bind_address, bool no_start,
               bool initial, bool initialstart, unsigned allocated_nodeid,
-              int connect_retries, int connect_delay, size_t logbuffer_size) {
+              int connect_retries, int connect_delay, size_t logbuffer_size,
+              const char *tls_search_path, int mgm_tls_req) {
   log_memusage("ndbd_run");
   LogBuffer *logBuf = new LogBuffer(logbuffer_size);
   BufferedOutputStream *ndbouts_bufferedoutputstream =
@@ -1027,7 +1037,7 @@ void ndbd_run(bool foreground, int report_fd, const char *connect_str,
   */
   theConfig->fetch_configuration(connect_str, force_nodeid, bind_address,
                                  allocated_nodeid, connect_retries,
-                                 connect_delay);
+                                 connect_delay, tls_search_path, opt_mgm_tls);
 
   /**
     Set the NDB DataDir, this is where we will locate log files and data
@@ -1044,6 +1054,34 @@ void ndbd_run(bool foreground, int report_fd, const char *connect_str,
   log_memusage("Config fetch");
 
   theConfig->setupConfiguration();
+
+  /* Find TLS key and certificate */
+  globalTransporterRegistry.init_tls(tls_search_path, NODE_TYPE_DB,
+                                     opt_mgm_tls);
+
+  /* Check TLS configuration */
+  const ndb_mgm_configuration_iterator *p =
+      globalEmulatorData.theConfiguration->getOwnConfigIterator();
+  require(p != nullptr);
+
+  Uint32 requireCert = 0, requireTls = 0;
+  ndb_mgm_get_int_parameter(p, CFG_NODE_REQUIRE_CERT, &requireCert);
+  ndb_mgm_get_int_parameter(p, CFG_DB_REQUIRE_TLS, &requireTls);
+
+  if ((requireCert || requireTls) && !globalTransporterRegistry.hasTlsCert()) {
+    if (openssl_version_ok)
+      g_eventLogger->error(
+          "Shutting down. This node does not have a valid TLS certificate.");
+    else
+      g_eventLogger->error(
+          "Shutting down. This version of OpenSSL is not supported.");
+    stop_async_log_func(log_threadvar, thread_args);
+    ndbd_exit(-1);
+  }
+
+  if (requireTls) {
+    g_eventLogger->info("This node will require TLS for all connections.");
+  }
 
   /**
     Printout various information about the threads in the
@@ -1084,10 +1122,6 @@ void ndbd_run(bool foreground, int report_fd, const char *connect_str,
   g_eventLogger->info("Memory Allocation for global memory pools Completed");
 
   log_memusage("Global memory pools allocated");
-
-  const ndb_mgm_configuration_iterator *p =
-      globalEmulatorData.theConfiguration->getOwnConfigIterator();
-  require(p != nullptr);
 
   bool have_password_option =
       g_filesystem_password_state.have_password_option();
@@ -1215,7 +1249,7 @@ void ndbd_run(bool foreground, int report_fd, const char *connect_str,
   }
   // Re-use the mgm handle as a transporter
   if (!globalTransporterRegistry.connect_client(
-          theConfig->get_config_retriever()->get_mgmHandlePtr()))
+          theConfig->get_mgm_handle_ptr()))
     ERROR_SET(fatal, NDBD_EXIT_CONNECTION_SETUP_FAILED,
               "Failed to convert mgm connection to a transporter", __FILE__);
   NdbThread *pTrp = globalTransporterRegistry.start_clients();

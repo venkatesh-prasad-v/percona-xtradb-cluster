@@ -19,10 +19,10 @@ CREATE TABLE t1 (f1 INTEGER PRIMARY KEY) ENGINE=InnoDB;
 --connection node_2
 --let $wait_condition = SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 't1';
 --source include/wait_condition.inc
-RESET MASTER;
+RESET BINARY LOGS AND GTIDS;
 
 --connection node_1
-RESET MASTER;
+RESET BINARY LOGS AND GTIDS;
 
 --let $wsrep_last_applied_before = `SELECT VARIABLE_VALUE FROM performance_schema.session_status WHERE VARIABLE_NAME = 'wsrep_last_applied'`
 
@@ -43,7 +43,7 @@ RESET MASTER;
 --let $binlog_file = mysqld-bin.000001
 --let $binlog_start = 125
 --let $keep_gtid_events = 1
---source include/show_binlog_events.inc
+--source include/rpl/deprecated/show_binlog_events.inc
 
 #
 # One line loaded, so less than the wsrep-load-data-splitting value
@@ -56,10 +56,10 @@ close FILE;
 EOF
 
 --connection node_1
-RESET MASTER;
+RESET BINARY LOGS AND GTIDS;
 
 --connection node_2
-RESET MASTER;
+RESET BINARY LOGS AND GTIDS;
 
 --connection node_1
 --let $wsrep_last_applied_before = `SELECT VARIABLE_VALUE FROM performance_schema.session_status WHERE VARIABLE_NAME = 'wsrep_last_applied'`
@@ -97,13 +97,13 @@ SELECT COUNT(*) = 1 FROM t1;
 --let $binlog_file = mysqld-bin.000001
 --let $binlog_start = 125
 --let $keep_gtid_events = 1
---source include/show_binlog_events.inc
+--source include/rpl/deprecated/show_binlog_events.inc
 
 --connection node_2
 --let $binlog_file = mysqld-bin.000001
 --let $binlog_start = 125
 --let $keep_gtid_events = 1
---source include/show_binlog_events.inc
+--source include/rpl/deprecated/show_binlog_events.inc
 
 --connection node_1
 TRUNCATE TABLE t1;
@@ -119,7 +119,7 @@ print FILE "1\n";
 close FILE;
 EOF
 
-RESET MASTER;
+RESET BINARY LOGS AND GTIDS;
 
 --let $wsrep_last_applied_before = `SELECT VARIABLE_VALUE FROM performance_schema.session_status WHERE VARIABLE_NAME = 'wsrep_last_applied'`
 
@@ -143,7 +143,7 @@ SELECT COUNT(*) = 0 FROM t1;
 --let $binlog_file = mysqld-bin.000001
 --let $binlog_start = 125
 --let $keep_gtid_events = 1
---source include/show_binlog_events.inc
+--source include/rpl/deprecated/show_binlog_events.inc
 
 --connection node_1
 DROP TABLE t1;
