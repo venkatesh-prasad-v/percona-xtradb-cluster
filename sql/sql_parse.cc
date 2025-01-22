@@ -189,6 +189,7 @@
 #endif /* WITH_LOCK_ORDER */
 
 #ifdef WITH_WSREP
+#include "wsrep_async_monitor.h"
 #include "wsrep_binlog.h"
 #include "wsrep_mysqld.h"
 #include "wsrep_sst.h"
@@ -306,10 +307,30 @@ bool all_tables_not_ok(THD *thd, Table_ref *tables) {
   if (WSREP(thd) && thd->wsrep_applier &&
       wsrep_check_mode(WSREP_MODE_IGNORE_NATIVE_REPLICATION_FILTER_RULES))
     return false;
-#endif
+
+  if (!rpl_filter->is_on()) return false;
+
+  bool ret = tables && !thd->sp_runtime_ctx &&
+             !rpl_filter->tables_ok(thd->db().str, tables);
+
+  // If this transaction is anyways going to be skipped, then skip the
+  // transaction in the async monitor as well
+  if (!ret && WSREP(thd) && thd->system_thread == SYSTEM_THREAD_SLAVE_WORKER &&
+      !thd->wsrep_applier) {
+    Slave_worker *sw = dynamic_cast<Slave_worker *>(thd->rli_slave);
+    Wsrep_async_monitor *wsrep_async_monitor{sw->get_wsrep_async_monitor()};
+    if (wsrep_async_monitor) {
+      auto seqno = sw->sequence_number();
+      assert(seqno > 0);
+      wsrep_async_monitor->skip(seqno);
+    }
+  }
+  return ret;
+#else
 
   return rpl_filter->is_on() && tables && !thd->sp_runtime_ctx &&
          !rpl_filter->tables_ok(thd->db().str, tables);
+#endif
 }
 
 bool is_normal_transaction_boundary_stmt(enum_sql_command sql_cmd) {
@@ -393,6 +414,21 @@ inline bool check_database_filters(THD *thd, const char *db,
         break;
     }
   }
+
+#ifdef WITH_WSREP
+  // This transaction is anyways going to be skipped. So skip the transaction
+  // in the async monitor as well
+  if (WSREP(thd) && thd->system_thread == SYSTEM_THREAD_SLAVE_WORKER
+      && !thd->wsrep_applier && !db_ok) {
+    Slave_worker *sw = dynamic_cast<Slave_worker*>(thd->rli_slave);
+    Wsrep_async_monitor *wsrep_async_monitor {sw->get_wsrep_async_monitor()};
+    if (wsrep_async_monitor) {
+      auto seqno = sw->sequence_number();
+      assert(seqno > 0);
+      wsrep_async_monitor->skip(seqno);
+    }
+  }
+#endif /* WITH_WSREP */
   return db_ok;
 }
 
