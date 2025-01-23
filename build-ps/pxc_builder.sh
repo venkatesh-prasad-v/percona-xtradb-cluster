@@ -932,10 +932,10 @@ build_source_deb(){
         sed -i "s:Conflicts\: percona-xtradb-cluster-pro-source:Conflicts\: percona-xtradb-cluster-source:g" debian/control
 
         sed -i "s:Package\: percona-xtradb-cluster-garbd:Package\: percona-xtradb-cluster-garbd-pro:g" debian/control
-        sed -i "s:, percona-xtradb-cluster-garbd-pro:, percona-xtradb-cluster-garbd:g" debian/control
+        sed -i "s:, percona-xtradb-cluster-garbd-pro$:, percona-xtradb-cluster-garbd:g" debian/control
 
         sed -i "s:Package\: percona-xtradb-cluster-garbd-debug:Package\: percona-xtradb-cluster-garbd-pro-debug:g" debian/control
-        sed -i "s:, percona-xtradb-cluster-garbd-pro-debug:, percona-xtradb-cluster-garbd-debug:g" debian/control
+        sed -i "s:, percona-xtradb-cluster-garbd-pro-debug$:, percona-xtradb-cluster-garbd-debug:g" debian/control
 
         cp debian/percona-xtradb-cluster-client.README.Debian debian/percona-xtradb-cluster-client-pro.README.Debian
         cp debian/percona-xtradb-cluster-client.dirs debian/percona-xtradb-cluster-client-pro.dirs
