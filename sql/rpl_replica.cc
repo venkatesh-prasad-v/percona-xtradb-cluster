@@ -7280,7 +7280,6 @@ wsrep_restart_point :
   rli->set_commit_order_manager(commit_order_mngr);
 
 #ifdef WITH_WSREP
-  // Restore the last executed seqno
   if (WSREP_ON && wsrep_use_async_monitor
       && opt_replica_preserve_commit_order
       && !rli->is_parallel_exec()
