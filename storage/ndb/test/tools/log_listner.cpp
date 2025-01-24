@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2007, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2007, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -26,9 +27,12 @@
 #include <ndb_global.h>
 #include <ndb_opts.h>
 #include <NDBT.hpp>
+#include "util/TlsKeyManager.hpp"
 
 static struct my_option my_long_options[] = {
     NDB_STD_OPTS("eventlog"),
+    NdbStdOpt::tls_search_path,
+    NdbStdOpt::mgm_tls,
     {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}};
 
 int filter[] = {15, NDB_MGM_EVENT_CATEGORY_BACKUP,
@@ -62,11 +66,15 @@ int main(int argc, char **argv) {
   if ((ho_error = opts.handle_options()))
     return NDBT_ProgramExit(NDBT_WRONGARGS);
 
+  TlsKeyManager tlsKeyManager;
+  tlsKeyManager.init_mgm_client(opt_tls_search_path);
+
   NdbMgmHandle handle = ndb_mgm_create_handle();
+  ndb_mgm_set_ssl_ctx(handle, tlsKeyManager.ctx());
   ndb_mgm_set_connectstring(handle, opt_ndb_connectstring);
 
   while (true) {
-    if (ndb_mgm_connect(handle, 0, 0, 0) == -1) {
+    if (ndb_mgm_connect_tls(handle, 0, 0, 0, opt_mgm_tls) == -1) {
       ndbout_c("Failed to connect");
       exit(0);
     }

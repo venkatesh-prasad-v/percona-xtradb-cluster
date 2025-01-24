@@ -9,12 +9,12 @@
 #
 --connection node_1
 SET SESSION wsrep_on=OFF;
-RESET MASTER;
+RESET BINARY LOGS AND GTIDS;
 SET SESSION wsrep_on=ON;
 
 --connection node_2
 SET SESSION wsrep_on=OFF;
-RESET MASTER;
+RESET BINARY LOGS AND GTIDS;
 SET SESSION wsrep_on=ON;
 
 CREATE TABLE t1 (f1 INT PRIMARY KEY) ENGINE=InnoDB;
@@ -32,10 +32,10 @@ SELECT COUNT(*) = 1 FROM t1 WHERE f1 = 2;
 
 # verify that insert query log event is present in node 2
 --let $binlog_file = mysqld-bin.000001
---let $binlog_start = 531
+--let $binlog_start = 532
 --let $keep_gtid_events = 1
 --let $binlog_limit = 1
---source include/show_binlog_events.inc
+--source include/rpl/deprecated/show_binlog_events.inc
 
 --connection node_1
 DROP TABLE t1;
@@ -45,10 +45,10 @@ DROP TABLE t1;
 #
 --connection node_1
 SET SESSION wsrep_on=OFF;
-RESET MASTER;
+RESET BINARY LOGS AND GTIDS;
 SET SESSION wsrep_on=ON;
 
 --connection node_2
 SET SESSION wsrep_on=OFF;
-RESET MASTER;
+RESET BINARY LOGS AND GTIDS;
 SET SESSION wsrep_on=ON;

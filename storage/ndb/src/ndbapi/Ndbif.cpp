@@ -1,15 +1,16 @@
-/* Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -111,6 +112,27 @@ int Ndb::init(int aMaxNoOfTransactions) {
   theFirstTransId |=
       theImpl->m_ndb_cluster_connection.get_next_transid(theNdbBlockNumber);
 
+  /**
+   * Initialise current connect index and node iterator to get balanced
+   * node selection offset for first request using a new Ndb object
+   */
+  {
+    /**
+     * Use ndb_cluster_connection given id to provide RR variation
+     * of 'starting offset' for unhinted TC node choice.
+     */
+    const Uint32 tcNodeChoiceOffset =
+        (nodeId + theImpl->theCurrentConnectIndex) %
+        (theImpl->theNoOfDBnodes ? theImpl->theNoOfDBnodes : MAX_NDB_NODES);
+
+    /* Configure RR + proximity aware unhinted iterators */
+    theImpl->theCurrentConnectIndex = tcNodeChoiceOffset;
+    theImpl->m_ndb_cluster_connection.init_get_next_node(theImpl->m_node_iter);
+    for (Uint32 i = 0; i < tcNodeChoiceOffset; i++) {
+      theImpl->m_ndb_cluster_connection.get_next_node(theImpl->m_node_iter);
+    }
+  }
+
   /* Init cached min node version */
   theFacade->lock_poll_mutex();
   theCachedMinDbNodeVersion = theFacade->getMinDbNodeVersion();
@@ -169,7 +191,6 @@ int Ndb::init(int aMaxNoOfTransactions) {
   DBUG_RETURN(0);
 
 error_handler:
-  g_eventLogger->info("error_handler");
   releaseTransactionArrays();
   delete theDictionary;
   theImpl->close();
@@ -940,7 +961,7 @@ void NdbImpl::trp_deliver_signal(const NdbApiSignal *aSignal,
         }
       } else {
 #ifdef VM_TRACE
-        g_eventLogger->info("Recevied TCKEY_FAILCONF wo/ operation");
+        g_eventLogger->info("Received TCKEY_FAILCONF wo/ operation");
 #endif
       }
       if (tFirstData & 1) {
@@ -972,7 +993,7 @@ void NdbImpl::trp_deliver_signal(const NdbApiSignal *aSignal,
         }
       }
 #ifdef VM_TRACE
-      g_eventLogger->info("Recevied TCKEY_FAILREF wo/ operation");
+      g_eventLogger->info("Received TCKEY_FAILREF wo/ operation");
 #endif
       return;
     }
@@ -1081,7 +1102,7 @@ void NdbImpl::trp_deliver_signal(const NdbApiSignal *aSignal,
       if (unlikely(op == nullptr ||
                    op->m_magic_number != NDB_EVENT_OP_MAGIC_NUMBER)) {
         g_eventLogger->error(
-            "dropped GSN_SUB_TABLE_DATA due to wrong magic "
+            "Dropped GSN_SUB_TABLE_DATA due to wrong magic "
             "number");
         DBUG_EXECUTE_IF("ndb_crash_on_drop_SUB_TABLE_DATA", DBUG_SUICIDE(););
         return;
@@ -1214,8 +1235,8 @@ void NdbImpl::trp_deliver_signal(const NdbApiSignal *aSignal,
 
 InvalidSignal:
 #ifdef VM_TRACE
-  g_eventLogger->info(
-      "Ndbif: Error NdbImpl::trp_deliver_signal "
+  g_eventLogger->warning(
+      "Ndbif: Error Invalid Signal received NdbImpl::trp_deliver_signal "
       "(tFirstDataPtr=%p, GSN=%d, theWaiter.m_state=%d)"
       " sender = (Block: %d Node: %d)",
       tFirstDataPtr, tSignalNumber, tWaitState,
@@ -1275,7 +1296,8 @@ void Ndb::completedTransaction(NdbTransaction *aCon) {
     }
   } else {
     g_eventLogger->info(
-        "theNoOfSentTransactions = %d theListState = %d"
+        "Ndb::completedTransaction() state error : theNoOfSentTransactions = "
+        "%d theListState = %d"
         " theTransArrayIndex = %d",
         theNoOfSentTransactions, aCon->theListState, aCon->theTransArrayIndex);
 #ifdef VM_TRACE
@@ -1322,7 +1344,7 @@ Uint32 Ndb::pollCompleted(NdbTransaction **aCopyArray) {
     for (i = 0; i < tNoCompletedTransactions; i++) {
       aCopyArray[i] = theCompletedTransactionsArray[i];
       if (aCopyArray[i]->theListState != NdbTransaction::InCompletedList) {
-        g_eventLogger->info("pollCompleted error %d",
+        g_eventLogger->info("Ndb::pollCompleted error %d",
                             (int)aCopyArray[i]->theListState);
         abort();
       }  // if
@@ -1363,7 +1385,8 @@ void Ndb::check_send_timeout() {
         a_con->printState();
         Uint32 t1 = (Uint32)a_con->theTransactionId;
         Uint32 t2 = a_con->theTransactionId >> 32;
-        g_eventLogger->info("4012 [%.8x %.8x]", t1, t2);
+        g_eventLogger->info("Ndb::check_send_timeout() 4012 [%.8x %.8x]", t1,
+                            t2);
         // abort();
 #endif
         a_con->theReleaseOnClose = true;

@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -40,8 +41,9 @@
 #include <Vector.hpp>
 #include <cstring>
 #include <signaldata/DumpStateOrd.hpp>
-#include "m_ctype.h"
+#include "../../src/ndbapi/NdbInfo.hpp"
 #include "my_sys.h"
+#include "mysql/strings/m_ctype.h"
 #include "util/require.h"
 
 static int changeStartPartitionedTimeout(NDBT_Context *ctx, NDBT_Step *step) {
@@ -54,6 +56,7 @@ static int changeStartPartitionedTimeout(NDBT_Context *ctx, NDBT_Step *step) {
 
   do {
     NdbMgmd mgmd;
+    mgmd.use_tls(opt_tls_search_path, opt_mgm_tls);
     if (!mgmd.connect()) {
       g_err << "Failed to connect to ndb_mgmd." << endl;
       break;
@@ -766,6 +769,7 @@ int runDirtyRead(NDBT_Context *ctx, NDBT_Step *step) {
     restarter.waitClusterStarted(60);
     CHK_NDB_READY(pNdb);
   }
+  CHECK(restarter.insertErrorInAllNodes(0) == 0, "Failed to clear insertError");
   return result;
 err:
   hugoOps.closeTransaction(pNdb);
@@ -2336,6 +2340,9 @@ int runBug27466(NDBT_Context *ctx, NDBT_Step *step) {
 
     res.startNodes(&node1, 1);
     if (res.waitClusterStarted()) return NDBT_FAILED;
+    // Error is consumed only in one DBTC block.
+    // Force error to be cleared in all DBTC instances.
+    CHECK(res.insertErrorInNode(node2, 0) == 0, "Failed to clear insertError");
   }
 
   return NDBT_OK;
@@ -4610,7 +4617,6 @@ int runBug58453(NDBT_Context *ctx, NDBT_Step *step) {
     CHK_NDB_READY(pNdb);
     hugoOps.clearTable(pNdb);
   }
-
   return NDBT_OK;
 }
 
@@ -5190,7 +5196,7 @@ int runIsolateMaster(NDBT_Context *ctx, NDBT_Step *step) {
   g_info << "Subscribing to MGMD events..." << endl;
 
   NdbMgmd mgmd;
-
+  mgmd.use_tls(opt_tls_search_path, opt_mgm_tls);
   if (!mgmd.connect()) {
     g_err << "Failed to connect to MGMD" << endl;
     return NDBT_FAILED;
@@ -5730,7 +5736,7 @@ int runTestScanFragWatchdog(NDBT_Context *ctx, NDBT_Step *step) {
     g_err << "Subscribing to MGMD events..." << endl;
 
     NdbMgmd mgmd;
-
+    mgmd.use_tls(opt_tls_search_path, opt_mgm_tls);
     if (!mgmd.connect()) {
       g_err << "Failed to connect to MGMD" << endl;
       break;
@@ -5890,6 +5896,7 @@ int runChangeNumLogPartsINR(NDBT_Context *ctx, NDBT_Step *step) {
   Uint32 value;
   key = CFG_DB_NO_REDOLOG_PARTS;
 
+  mgmd.use_tls(opt_tls_search_path, opt_mgm_tls);
   if (!mgmd.connect()) {
     g_err << "Failed to connect to ndb_mgmd." << endl;
     ctx->stopTest();
@@ -5921,6 +5928,75 @@ int runChangeNumLogPartsINR(NDBT_Context *ctx, NDBT_Step *step) {
   return NDBT_OK;
 }
 
+static int get_num_exec_threads(Ndb_cluster_connection *connection,
+                                Uint32 nodeId) {
+  NdbInfo ndbinfo(connection, "ndbinfo/");
+  if (!ndbinfo.init()) {
+    g_err << "ndbinfo.init failed" << endl;
+    return -1;
+  }
+
+  const NdbInfo::Table *table;
+  if (ndbinfo.openTable("ndbinfo/threads", &table) != 0) {
+    g_err << "Failed to openTable(threads)" << endl;
+    return -1;
+  }
+
+  NdbInfoScanOperation *scanOp = nullptr;
+  if (ndbinfo.createScanOperation(table, &scanOp)) {
+    g_err << "No NdbInfoScanOperation" << endl;
+    ndbinfo.closeTable(table);
+    return -1;
+  }
+
+  if (scanOp->readTuples() != 0) {
+    g_err << "scanOp->readTuples failed" << endl;
+    ndbinfo.releaseScanOperation(scanOp);
+    ndbinfo.closeTable(table);
+    return -1;
+  }
+
+  const NdbInfoRecAttr *node_id_col = scanOp->getValue("node_id");
+  const NdbInfoRecAttr *thr_no_col = scanOp->getValue("thr_no");
+
+  if (scanOp->execute() != 0) {
+    g_err << "scanOp->execute failed" << endl;
+    ndbinfo.releaseScanOperation(scanOp);
+    ndbinfo.closeTable(table);
+    return -1;
+  }
+
+  bool found_node_id = false;
+  Uint32 thread_no = 0;
+  // Iterate through the result list
+  do {
+    const int scan_next_result = scanOp->nextResult();
+    if (scan_next_result == -1) {
+      g_err << "Failure to process ndbinfo records" << endl;
+      ndbinfo.releaseScanOperation(scanOp);
+      ndbinfo.closeTable(table);
+      return -1;
+    } else if (scan_next_result == 0) {
+      // All ndbinfo records processed
+      ndbinfo.releaseScanOperation(scanOp);
+      ndbinfo.closeTable(table);
+      if (!found_node_id) return 0;
+      if (thread_no == 0)
+        g_err << "Single threaded data node" << endl;
+      else
+        g_err << "Multi threaded data node" << endl;
+      return thread_no + 1;
+
+    } else {
+      // Check thread_no of records from given nodeId
+      const Uint32 node_id_record = node_id_col->u_32_value();
+      if (node_id_record != nodeId) continue;
+      found_node_id = true;
+      thread_no = thr_no_col->u_32_value();
+    }
+  } while (true);
+}
+
 int runChangeNumLDMsNR(NDBT_Context *ctx, NDBT_Step *step) {
   NdbRestarter restarter;
   if (restarter.getNumDbNodes() < 2) {
@@ -5934,6 +6010,21 @@ int runChangeNumLDMsNR(NDBT_Context *ctx, NDBT_Step *step) {
     g_err << "Failed to find node ids of data nodes" << endl;
     return NDBT_FAILED;
   }
+
+  int node1_no_threads =
+      get_num_exec_threads(&ctx->m_cluster_connection, node_1);
+  int node2_no_threads =
+      get_num_exec_threads(&ctx->m_cluster_connection, node_2);
+  g_err << node_1 << " " << node1_no_threads << endl;
+  g_err << node_2 << " " << node2_no_threads << endl;
+
+  if (node1_no_threads < 2 || node2_no_threads < 2) {
+    g_err << "[SKIPPED] Test is useful only for clusters running multi threaded"
+             "data node (ndbmtd)"
+          << endl;
+    ctx->stopTest();
+    return NDBT_SKIPPED;
+  }
   NdbMgmd mgmd;
   Uint32 keys[2];
   Uint32 values[2];
@@ -5942,6 +6033,7 @@ int runChangeNumLDMsNR(NDBT_Context *ctx, NDBT_Step *step) {
   keys[0] = CFG_DB_AUTO_THREAD_CONFIG;
   keys[1] = CFG_DB_NUM_CPUS;
 
+  mgmd.use_tls(opt_tls_search_path, opt_mgm_tls);
   if (!mgmd.connect()) {
     g_err << "Failed to connect to ndb_mgmd." << endl;
     ctx->stopTest();
@@ -6052,6 +6144,7 @@ int runTestScanFragWatchdogDisable(NDBT_Context *ctx, NDBT_Step *step) {
   int victim = restarter.getNode(NdbRestarter::NS_RANDOM);
   do {
     NdbMgmd mgmd;
+    mgmd.use_tls(opt_tls_search_path, opt_mgm_tls);
     if (!mgmd.connect()) {
       g_err << "Failed to connect to ndb_mgmd." << endl;
       break;
@@ -7499,6 +7592,7 @@ int runArbitrationWithApiNodeFailure(NDBT_Context *ctx, NDBT_Step *step) {
    * 1. connect new api node
    */
   Ndb_cluster_connection *cluster_connection = new Ndb_cluster_connection();
+  cluster_connection->configure_tls(opt_tls_search_path, opt_mgm_tls);
   if (cluster_connection->connect() != 0) {
     g_err << "ERROR: connect failure." << endl;
     return NDBT_FAILED;
@@ -7861,6 +7955,7 @@ int run_PLCP_many_parts(NDBT_Context *ctx, NDBT_Step *step) {
     return NDBT_FAILED;
   }
 
+  mgmd.use_tls(opt_tls_search_path, opt_mgm_tls);
   if (!mgmd.connect()) {
     g_err << "Failed to connect to ndb_mgmd." << endl;
     return NDBT_FAILED;
@@ -7979,6 +8074,8 @@ int run_PLCP_many_parts(NDBT_Context *ctx, NDBT_Step *step) {
     HugoTransactions trans(*pDict->getTable(tab.getName()));
     trans.loadTable(pNdb, ctx->getNumRecords());
     trans.scanUpdateRecords(pNdb, ctx->getNumRecords());
+    CHECK(restarter.insertErrorInNode(node_1, 0) == 0,
+          "Failed to clear insertError");
     return NDBT_OK;
   }
   /**
@@ -8277,6 +8374,7 @@ int runChangeDataNodeConfig(NDBT_Context *ctx, NDBT_Step *step) {
 
     // Override the config
     NdbMgmd mgmd;
+    mgmd.use_tls(opt_tls_search_path, opt_mgm_tls);
     Uint32 old_config_value = 0;
     CHECK(mgmd.change_config32(new_config_value, &old_config_value,
                                CFG_SECTION_NODE, config_var_id),
@@ -9017,6 +9115,7 @@ int runApiDetectNoFirstHeartbeat(NDBT_Context *ctx, NDBT_Step *step) {
 
   g_err << "Connect new API Node." << endl;
   Ndb_cluster_connection *cluster_connection = new Ndb_cluster_connection();
+  cluster_connection->configure_tls(opt_tls_search_path, opt_mgm_tls);
   if (cluster_connection->connect() != 0) {
     g_err << "ERROR: connect failure." << endl;
     return NDBT_FAILED;
@@ -10424,7 +10523,7 @@ int main(int argc, const char **argv) {
   // It might be interesting to have longer defaults for num
   // loops in this test
   // Just performing 100 node restarts would not be enough?
-  // We can have initialisers in the NDBT_Testcase class like 
+  // We can have initialisers in the NDBT_Testcase class like
   // this...
   testNodeRestart.setDefaultLoops(1000);
 #endif

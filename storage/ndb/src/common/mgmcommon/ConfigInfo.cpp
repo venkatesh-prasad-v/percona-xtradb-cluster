@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -27,6 +28,7 @@
 #include <cstring>
 #include <optional>
 #include "ndb_config.h"
+#include "openssl/ssl.h"
 #include "util/require.h"
 
 #include <NdbTCP.h>
@@ -34,11 +36,12 @@
 #include <ndb_limits.h>
 #include <ndb_opts.h>
 #include <ndb_version.h>
-#include <portlib/ndb_localtime.h>
 #include <Bitmask.hpp>
 #include "ConfigInfo.hpp"
 #include "InitConfigFileParser.hpp"
 #include "m_string.h"
+#include "portlib/ndb_localtime.h"
+#include "portlib/ndb_openssl_version.h"
 #include "portlib/ndb_sockaddr.h"
 
 #define KEY_INTERNAL 0
@@ -329,8 +332,8 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
      ConfigInfo::CI_USED, false, ConfigInfo::CI_BOOL, "false", "false", "true"},
 
     {CFG_NODE_HOST, "HostName", DB_TOKEN, "Name of computer for this node",
-     ConfigInfo::CI_USED, false, ConfigInfo::CI_STRING, "localhost", nullptr,
-     nullptr},
+     ConfigInfo::CI_USED, CI_RESTART_SYSTEM, ConfigInfo::CI_STRING, "localhost",
+     nullptr, nullptr},
 
     {CFG_NODE_DEDICATED, "Dedicated", DB_TOKEN,
      "The node id for this node will only be handed out to connections that "
@@ -351,9 +354,13 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
      ConfigInfo::CI_USED, false, ConfigInfo::CI_INT, MANDATORY, "1",
      STR_VALUE(MAX_DATA_NODE_ID)},
 
+    {CFG_NODE_REQUIRE_CERT, "RequireCertificate", DB_TOKEN,
+     "Require valid TLS key and certificate at startup time",
+     ConfigInfo::CI_USED, false, ConfigInfo::CI_BOOL, "false", "false", "true"},
+
     {CFG_DB_SERVER_PORT, "ServerPort", DB_TOKEN,
      "Port used to setup transporter for incoming connections from API nodes",
-     ConfigInfo::CI_USED, false, ConfigInfo::CI_INT, nullptr, "1",
+     ConfigInfo::CI_USED, CI_RESTART_SYSTEM, ConfigInfo::CI_INT, nullptr, "1",
      STR_VALUE(MAX_PORT_NO)},
 
     {CFG_DB_NO_REPLICAS, "NoOfReplicas", DB_TOKEN,
@@ -398,8 +405,8 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
      "4000", "0", STR_VALUE(MAX_INT_RNIL)},
 
     {KEY_INTERNAL, "ExecuteOnComputer", DB_TOKEN, "HostName",
-     ConfigInfo::CI_DEPRECATED, false, ConfigInfo::CI_STRING, nullptr, nullptr,
-     nullptr},
+     ConfigInfo::CI_DEPRECATED, CI_RESTART_SYSTEM, ConfigInfo::CI_STRING,
+     nullptr, nullptr, nullptr},
 
     {CFG_DB_NO_SAVE_MSGS, "MaxNoOfSavedMessages", DB_TOKEN,
      "Max number of error messages in error log and max number of trace files",
@@ -419,8 +426,8 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
      ConfigInfo::CI_USED, 0, ConfigInfo::CI_BOOL, "false", "false", "true"},
 
     {CFG_DB_USE_SHM, "UseShm", DB_TOKEN,
-     "Use shared memory transporter on same host", ConfigInfo::CI_USED, 0,
-     ConfigInfo::CI_BOOL, "false", "false", "true"},
+     "Use shared memory transporter on same host", ConfigInfo::CI_USED,
+     CI_RESTART_SYSTEM, ConfigInfo::CI_BOOL, "false", "false", "true"},
 
     {CFG_DB_MEMLOCK, "LockPagesInMainMemory", DB_TOKEN,
      "If set to yes, then NDB Cluster data will not be swapped out to disk",
@@ -938,8 +945,8 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
      "Use zlib to compress BACKUPs as they are written", ConfigInfo::CI_USED, 0,
      ConfigInfo::CI_BOOL, "false", "false", "true"},
     {CFG_DB_COMPRESSED_LCP, "CompressedLCP", DB_TOKEN,
-     "Write compressed LCPs using zlib", ConfigInfo::CI_USED,
-     CI_RESTART_INITIAL, ConfigInfo::CI_BOOL, "false", "false", "true"},
+     "Write compressed LCPs using zlib", ConfigInfo::CI_USED, false,
+     ConfigInfo::CI_BOOL, "false", "false", "true"},
 
     {CFG_DB_REQUIRE_ENCRYPTED_BACKUP, "RequireEncryptedBackup", DB_TOKEN,
      "If set to one only encrypted backups are allowed. If zero both encrypted "
@@ -950,6 +957,10 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
      "Encryption of local checkpoint and table space files.",
      ConfigInfo::CI_USED, CI_RESTART_INITIAL, ConfigInfo::CI_INT, "0", "0",
      "1"},
+
+    {CFG_DB_REQUIRE_TLS, "RequireTls", DB_TOKEN,
+     "Require TLS-authenticated secure connections", ConfigInfo::CI_USED, 0,
+     ConfigInfo::CI_BOOL, "false", "false", "true"},
 
     {CFG_EXTRA_SEND_BUFFER_MEMORY, "ExtraSendBufferMemory", DB_TOKEN,
      "Extra send buffer memory to use for send buffers in all transporters",
@@ -1591,6 +1602,14 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
      "Artificial signal flow mixing to expose bugs.", ConfigInfo::CI_USED,
      false, ConfigInfo::CI_INT, "0", "0", STR_VALUE(MAX_INT_RNIL)},
 
+    {CFG_NODE_REQUIRE_CERT, "RequireCertificate", MGM_TOKEN,
+     "Require valid TLS key and certificate at startup time",
+     ConfigInfo::CI_USED, false, ConfigInfo::CI_BOOL, "false", "false", "true"},
+
+    {CFG_MGM_REQUIRE_TLS, "RequireTls", MGM_TOKEN,
+     "Require TLS-authenticated secure connections", ConfigInfo::CI_USED, 0,
+     ConfigInfo::CI_BOOL, "false", "false", "true"},
+
     /****************************************************************************
      * TCP
      ***************************************************************************/
@@ -1649,6 +1668,10 @@ const ConfigInfo::ParamInfo ConfigInfo::m_ParamInfo[] = {
     {CFG_TCP_SPINTIME, "TcpSpintime", "TCP",
      "Number of microseconds to spin before going to sleep when receiving",
      ConfigInfo::CI_USED, false, ConfigInfo::CI_INT, "0", "0", "2000"},
+
+    {CFG_TCP_REQUIRE_TLS, "RequireLinkTls", "TCP",
+     "Use TLS-authenticated secure connections for TCP transporter links",
+     ConfigInfo::CI_INTERNAL, 0, ConfigInfo::CI_BOOL, "false", "false", "true"},
 
     {CFG_TCP_RECEIVE_BUFFER_SIZE, "ReceiveBufferMemory", "TCP",
      "Bytes of buffer for signals received by this node", ConfigInfo::CI_USED,
@@ -3921,6 +3944,8 @@ static bool add_a_connection(Vector<ConfigInfo::ConfigRuleSection> &sections,
   Uint32 wan = 0;
   Uint32 location_domain1 = 0;
   Uint32 location_domain2 = 0;
+  Uint32 reqTls1 = 0;
+  Uint32 reqTls2 = 0;
   require(ctx.m_config->get("Node", nodeId1, &tmp));
   tmp->get("HostName", &hostname1);
   tmp->get("LocationDomainId", &location_domain1);
@@ -3933,6 +3958,8 @@ static bool add_a_connection(Vector<ConfigInfo::ConfigRuleSection> &sections,
       return ret == 0 ? true : false;
     }
   }
+
+  tmp->get("RequireTls", &reqTls1);
 
   require(ctx.m_config->get("Node", nodeId2, &tmp));
   tmp->get("HostName", &hostname2);
@@ -3954,6 +3981,8 @@ static bool add_a_connection(Vector<ConfigInfo::ConfigRuleSection> &sections,
     }
   }
 
+  tmp->get("RequireTls", &reqTls2);
+
   char buf[16];
   s.m_sectionData = new Properties(true);
   BaseString::snprintf(buf, sizeof(buf), "%u", nodeId1);
@@ -3974,6 +4003,8 @@ static bool add_a_connection(Vector<ConfigInfo::ConfigRuleSection> &sections,
       s.m_sectionData->put("TCP_SND_BUF_SIZE", 4194304);
       s.m_sectionData->put("TCP_MAXSEG_SIZE", 61440);
     }
+
+    s.m_sectionData->put("RequireLinkTls", reqTls1 | reqTls2);
   }
 
   sections.push_back(s);

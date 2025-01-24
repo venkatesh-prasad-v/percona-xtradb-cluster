@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -117,7 +118,8 @@ void Configuration::closeConfiguration(bool end_session) {
 
 void Configuration::fetch_configuration(
     const char *_connect_string, int force_nodeid, const char *_bind_address,
-    NodeId allocated_nodeid, int connect_retries, int connect_delay) {
+    NodeId allocated_nodeid, int connect_retries, int connect_delay,
+    const char *tls_search_path, int mgm_tls) {
   /**
    * Fetch configuration from management server
    */
@@ -138,6 +140,8 @@ void Configuration::fetch_configuration(
               "Could not initialize handle to management server",
               m_config_retriever->getErrorString());
   }
+
+  m_config_retriever->init_mgm_tls(tls_search_path, Node::Type::DB, mgm_tls);
 
   if (m_config_retriever->do_connect(connect_retries, connect_delay, 1) == -1) {
     const char *s = m_config_retriever->getErrorString();
@@ -414,8 +418,21 @@ void Configuration::setupConfiguration() {
   Uint32 num_cpus = 0;
   iter.get(CFG_DB_AUTO_THREAD_CONFIG, &auto_thread_config);
   iter.get(CFG_DB_NUM_CPUS, &num_cpus);
-  g_eventLogger->info("AutomaticThreadConfig = %u, NumCPUs = %u",
-                      auto_thread_config, num_cpus);
+
+  /**
+   * Ignore AutomaticThreadConfig configuration for single threaded data
+   * node (ndbd).
+   */
+  if (auto_thread_config && !NdbIsMultiThreaded()) {
+    auto_thread_config = 0;
+    g_eventLogger->info(
+        "AutomaticThreadConfig configuration ignored, "
+        "ndbd does not support automatic thread config");
+  } else {
+    g_eventLogger->info("AutomaticThreadConfig = %u, NumCPUs = %u",
+                        auto_thread_config, num_cpus);
+  }
+
   iter.get(CFG_DB_MT_THREADS, &mtthreads);
   iter.get(CFG_DB_MT_THREAD_CONFIG, &thrconfigstring);
   if (auto_thread_config == 0 && thrconfigstring != nullptr &&
@@ -1421,6 +1438,10 @@ void Configuration::initThreadArray() {
     threadInfo[i].type = NotInUse;
   }
   NdbMutex_Unlock(threadIdMutex);
+}
+
+NdbMgmHandle *Configuration::get_mgm_handle_ptr() {
+  return m_config_retriever->get_mgmHandlePtr();
 }
 
 template class Vector<struct ThreadInfo>;

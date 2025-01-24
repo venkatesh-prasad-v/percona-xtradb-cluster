@@ -1,16 +1,17 @@
 /*
- Copyright (c) 2013, 2023, Oracle and/or its affiliates.
+ Copyright (c) 2013, 2024, Oracle and/or its affiliates.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
  as published by the Free Software Foundation.
 
- This program is also distributed with certain software (including
+ This program is designed to work with certain software (including
  but not limited to OpenSSL) that is licensed under separate terms,
  as designated in a particular file or component or in included license
  documentation.  The authors of MySQL hereby grant you an additional
  permission to link the program and your derivative works with the
- separately licensed software that they have included with MySQL.
+ separately licensed software that they have either included with
+ the program or referenced in the documentation.
 
  This program is distributed in the hope that it will be useful,
  but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -49,7 +50,7 @@ class ListNode {
 
  public:
   /* Constructor */
-  ListNode<T>(T *t) : next(0), item(t), signalinfo(0) { note[0] = '\0'; }
+  ListNode(T *t) : next(0), item(t), signalinfo(0) { note[0] = '\0'; }
 
   /* Methods */
   void setNote(const char *txt) {
@@ -68,12 +69,12 @@ class SharedList {
   ListNode<T> *head;
 
  public:
-  SharedList<T>() : head(0) {
+  SharedList() : head(0) {
     int i = uv_mutex_init(&lock);
     assert(i == 0);
   }
 
-  ~SharedList<T>() { uv_mutex_destroy(&lock); }
+  ~SharedList() { uv_mutex_destroy(&lock); }
 
   void produce(ListNode<T> *node) {
     /* Find the tail */

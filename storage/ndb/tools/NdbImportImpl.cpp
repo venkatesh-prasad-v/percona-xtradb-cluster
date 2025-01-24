@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2017, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2017, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -25,8 +26,11 @@
 #include "NdbImportImpl.hpp"
 #include <inttypes.h>
 #include <new>
+#include "util/TlsKeyManager.hpp"
 #include "util/ndb_math.h"
 #include "util/require.h"
+
+TlsKeyManager g_tlsKeyManager;
 
 NdbImportImpl::NdbImportImpl(NdbImport &facade)
     : NdbImport(*this),
@@ -35,6 +39,7 @@ NdbImportImpl::NdbImportImpl(NdbImport &facade)
       m_error(m_util.c_error) {
   c_connectionindex = 0;
   log_debug(1, "ctor");
+  g_tlsKeyManager.init_mgm_client(opt_tls_search_path);
 }
 
 NdbImportImpl::~NdbImportImpl() { log_debug(1, "dtor"); }
@@ -70,7 +75,8 @@ int NdbImportImpl::Mgm::do_connect() {
   ndb_mgm_set_connectstring(m_handle, opt_ndb_connectstring);
   int retries = opt_connect_retries;
   int delay = opt_connect_retry_delay;
-  if (ndb_mgm_connect(m_handle, retries, delay, 0) == -1) {
+  ndb_mgm_set_ssl_ctx(m_handle, g_tlsKeyManager.ctx());
+  if (ndb_mgm_connect_tls(m_handle, retries, delay, 0, opt_mgm_tls) == -1) {
     m_util.set_error_mgm(m_error, __LINE__, m_handle);
     return -1;
   }
@@ -183,6 +189,7 @@ int NdbImportImpl::do_connect() {
       int nodeid = opt_ndb_nodeid != 0 ? opt_ndb_nodeid + i : 0;
       c.m_connections[i] = new Ndb_cluster_connection(
           opt_ndb_connectstring, c.m_mainconnection, nodeid);
+      c.m_connections[i]->configure_tls(opt_tls_search_path, opt_mgm_tls);
       if (i == 0) c.m_mainconnection = c.m_connections[i];
     }
     for (uint i = 0; i < c.m_connectioncnt; i++) {

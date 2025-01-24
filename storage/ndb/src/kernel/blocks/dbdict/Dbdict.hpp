@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -3472,6 +3473,7 @@ class Dbdict : public SimulatedBlock {
     Uint32 m_subscriptionKey;
     Uint32 m_subscriberRef;
     Uint32 m_subscriberData;
+    Uint32 m_requestInfo;
     Uint8 m_buckets_per_ng[256];  // For SUB_START_REQ
     union {
       SubStartConf m_sub_start_conf;
@@ -4500,6 +4502,10 @@ class Dbdict : public SimulatedBlock {
   void masterRestart_checkSchemaStatusComplete(Signal *, Uint32, Uint32);
 
   void sendSchemaComplete(Signal *, Uint32 callbackData, Uint32);
+
+  void get_fk_index_column_orders(ForeignKeyRecPtr fk_ptr,
+                                  Uint32 *parent_to_child,
+                                  Uint32 *child_to_parent) const;
 
  public:
   void send_drop_file(Signal *, Uint32, Uint32, DropFileImplReq::RequestInfo);

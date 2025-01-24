@@ -26,6 +26,7 @@
 /* C++ standard header files */
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <limits>
 #include <map>
 #include <set>
@@ -34,15 +35,14 @@
 #include <vector>
 
 /* MySQL header files */
-#include "m_ctype.h"
-#include "my_bit.h"
 #include "my_bitmap.h"
 #include "my_compare.h"
 #include "my_stacktrace.h"
 #include "myisampack.h"
+#include "mysql/strings/m_ctype.h"
 #include "mysql/thread_pool_priv.h"
+#include "strings/m_ctype_internals.h"
 #include "sql/dd/cache/dictionary_client.h"  // dd::cache::Dictionary_client
-#include "sql/dd/upgrade_57/upgrade.h"       // dd::upgrade_57::in_progress
 #include "sql/field.h"
 #include "sql/key.h"
 #include "sql/mysqld.h"
@@ -59,6 +59,20 @@
 extern CHARSET_INFO my_charset_utf16_bin;
 extern CHARSET_INFO my_charset_utf16le_bin;
 extern CHARSET_INFO my_charset_utf32_bin;
+
+namespace {
+/*
+  Find smallest X in 2^X >= value
+  This can be used to divide a number with value by doing a shift instead
+*/
+inline uint my_bit_log2(ulong value) {
+  uint bit;
+  for (bit = 0; value > 1; value >>= 1, bit++)
+    ;
+  return bit;
+}
+
+}  // namespace
 
 namespace myrocks {
 
@@ -1084,7 +1098,7 @@ uint Rdb_key_def::pack_index_tuple(TABLE *const tbl, uchar *const pack_buffer,
   const uint key_len = calculate_key_len(tbl, m_keyno, keypart_map);
   key_restore(tbl->record[0], key_tuple, &tbl->key_info[m_keyno], key_len);
 
-  uint n_used_parts = my_count_bits(keypart_map);
+  uint n_used_parts = std::popcount(keypart_map);
   if (keypart_map == HA_WHOLE_KEY) n_used_parts = 0;  // Full key is used
 
   /* Then, convert the record into a mem-comparable form */
@@ -1491,7 +1505,6 @@ uint Rdb_key_def::pack_record(const TABLE *const tbl, uchar *const pack_buffer,
   Pack the hidden primary key into mem-comparable form.
 
   @param
-    tbl                   Table we're working on
     hidden_pk_id     IN   New value to be packed into key
     packed_tuple     OUT  Key in the mem-comparable form
 
@@ -3906,7 +3919,7 @@ static const Rdb_collation_codec *rdb_init_collation_mapping(
         uchar dst = p.first;
         for (uint idx = 0; idx < p.second.size(); idx++) {
           uchar src = p.second[idx];
-          uchar bits = my_bit_log2(my_round_up_to_next_power(p.second.size()));
+          uchar bits = my_bit_log2(std::bit_ceil(p.second.size()));
           cur->m_enc_idx[src] = idx;
           cur->m_enc_size[src] = bits;
           cur->m_dec_size[dst] = bits;
@@ -4993,7 +5006,7 @@ bool Rdb_ddl_manager::init(Rdb_dict_manager *const dict_arg,
     If validate_tables is greater than 0 run the validation.  Only fail the
     initialzation if the setting is 1.  If the setting is 2 we continue.
   */
-  if (validate_tables > 0 && !dd::upgrade_57::in_progress()) {
+  if (validate_tables > 0) {
     std::string msg;
     if (!validate_schemas()) {
       msg =

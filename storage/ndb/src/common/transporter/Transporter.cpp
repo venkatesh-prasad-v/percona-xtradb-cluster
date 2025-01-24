@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -47,7 +48,7 @@
 #define DEBUG_FPRINTF(a)
 #endif
 
-//#define DEBUG_MULTI_TRP 1
+// #define DEBUG_MULTI_TRP 1
 
 #ifdef DEBUG_MULTI_TRP
 #define DEB_MULTI_TRP(arglist)   \
@@ -82,9 +83,15 @@ Transporter::Transporter(TransporterRegistry &t_reg, TrpId transporter_index,
       m_connect_count(0),
       m_overload_count(0),
       m_slowdown_count(0),
+      m_send_buffer_alloc_bytes(0),
+      m_send_buffer_max_alloc_bytes(0),
+      m_send_buffer_used_bytes(0),
+      m_send_buffer_max_used_bytes(0),
       isMgmConnection(_isMgmConnection),
       m_connected(false),
       m_type(_type),
+      m_require_tls(false),
+      m_encrypted(false),
       reportFreq(4096),
       receiveCount(0),
       receiveSize(0),
@@ -153,17 +160,26 @@ Transporter::Transporter(TransporterRegistry &t_reg, TrpId transporter_index,
   DBUG_VOID_RETURN;
 }
 
+void Transporter::use_tls_client_auth() {
+  delete m_socket_client;
+  SocketAuthTls *authTls =
+      new SocketAuthTls(&m_transporter_registry.m_tls_keys, m_require_tls);
+  m_socket_client = new SocketClient(authTls);
+  m_socket_client->set_connect_timeout(m_timeOutMillis);
+}
+
 Transporter::~Transporter() { delete m_socket_client; }
 
 bool Transporter::start_disconnecting(int err, bool send_source) {
   DEB_MULTI_TRP(("Disconnecting trp_id %u for node %u", getTransporterIndex(),
                  remoteNodeId));
-  return m_transporter_registry.start_disconnecting_trp(getTransporterIndex(),
-                                                        err, send_source);
+  return m_transporter_registry.start_disconnecting(getTransporterIndex(), err,
+                                                    send_source);
 }
 
 bool Transporter::configure(const TransporterConfiguration *conf) {
   if (configure_derived(conf) && conf->s_port == m_s_port &&
+      conf->requireTls == m_require_tls &&
       strcmp(conf->remoteHostName, remoteHostName) == 0 &&
       strcmp(conf->localHostName, localHostName) == 0 &&
       conf->remoteNodeId == remoteNodeId && conf->localNodeId == localNodeId &&
@@ -213,6 +229,10 @@ bool Transporter::connect_server(NdbSocket &&sockfd, BaseString &msg) {
   DBUG_RETURN(true);
 }
 
+inline static void tls_error(int code) {
+  g_eventLogger->error("TLS error %d '%s'", code, TlsKeyError::message(code));
+}
+
 bool Transporter::connect_client_mgm(int port) {
   require(!isPartOfMultiTransporter());
   NdbSocket secureSocket =
@@ -238,7 +258,7 @@ bool Transporter::connect_client() {
   }
 
   if (isMgmConnection) {
-    return connect_client_mgm(port);
+    DBUG_RETURN(connect_client_mgm(port));
   } else {
     ndb_sockaddr local;
     if (strlen(localHostName) > 0) {
@@ -282,10 +302,43 @@ bool Transporter::connect_client() {
     }
 
     /** Socket Authentication */
-    if (m_socket_client->authenticate(secureSocket) <
-        SocketAuthSimple::AuthOk) {
+    int auth = m_socket_client->authenticate(secureSocket);
+    g_eventLogger->debug("Transporter client auth result: %d [%s]", auth,
+                         SocketAuthenticator::error(auth));
+    if (auth < SocketAuthenticator::AuthOk) {
       secureSocket.close();
       DBUG_RETURN(false);
+    }
+
+    if (auth == SocketAuthTls::negotiate_tls_ok)  // Initiate TLS
+    {
+      struct ssl_ctx_st *ctx = m_transporter_registry.m_tls_keys.ctx();
+      struct ssl_st *ssl = NdbSocket::get_client_ssl(ctx);
+      if (ssl == nullptr) {
+        tls_error(TlsKeyError::no_local_cert);
+        secureSocket.close();
+        DBUG_RETURN(false);
+      }
+      if (!secureSocket.associate(ssl)) {
+        tls_error(TlsKeyError::openssl_error);
+        NdbSocket::free_ssl(ssl);
+        secureSocket.close();
+        DBUG_RETURN(false);
+      }
+      if (!secureSocket.do_tls_handshake()) {
+        tls_error(TlsKeyError::authentication_failure);
+        // secureSocket closed by do_tls_handshake
+        DBUG_RETURN(false);
+      }
+
+      /* Certificate Authorization */
+      auth =
+          TlsKeyManager::check_server_host_auth(secureSocket, remoteHostName);
+      if (auth) {
+        tls_error(auth);
+        secureSocket.close();
+        DBUG_RETURN(false);
+      }
     }
   }
 
@@ -422,9 +475,7 @@ bool Transporter::connect_client(NdbSocket &&socket) {
         (stderr, "connect_client multi trp node: %u\n", getRemoteNodeId()));
   }
 #endif
-  m_transporter_registry.lockMultiTransporters();
   update_connect_state(true);
-  m_transporter_registry.unlockMultiTransporters();
   DBUG_RETURN(true);
 }
 
@@ -464,6 +515,10 @@ void Transporter::resetCounters() {
   m_bytes_received = 0;
   m_overload_count = 0;
   m_slowdown_count = 0;
+  m_send_buffer_alloc_bytes = 0;
+  m_send_buffer_max_alloc_bytes = 0;
+  m_send_buffer_used_bytes = 0;
+  m_send_buffer_max_used_bytes = 0;
 }
 
 void Transporter::checksum_state::dumpBadChecksumInfo(
@@ -521,7 +576,7 @@ void Transporter::checksum_state::dumpBadChecksumInfo(
 }
 
 void Transporter::set_get(ndb_socket_t fd, int level, int optval,
-                          const char * /*optname*/, int val) {
+                          const char *optname [[maybe_unused]], int val) {
   int actual = 0, defval = 0;
 
   ndb_getsockopt(fd, level, optval, &defval);

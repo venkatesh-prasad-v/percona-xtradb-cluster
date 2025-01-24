@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2023, Oracle and/or its affiliates.
+Copyright (c) 1995, 2024, Oracle and/or its affiliates.
 Copyright (c) 2008, Google Inc.
 
 Portions of this file contain modifications contributed and copyrighted by
@@ -13,12 +13,13 @@ This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -87,6 +88,7 @@ mysql_pfs_key_t log_write_notifier_mutex_key;
 mysql_pfs_key_t log_flush_notifier_mutex_key;
 mysql_pfs_key_t log_limits_mutex_key;
 mysql_pfs_key_t log_files_mutex_key;
+mysql_pfs_key_t log_governor_mutex_key;
 mysql_pfs_key_t log_cmdq_mutex_key;
 mysql_pfs_key_t log_sn_lock_key;
 mysql_pfs_key_t log_sn_mutex_key;
@@ -99,6 +101,7 @@ mysql_pfs_key_t recalc_pool_mutex_key;
 mysql_pfs_key_t page_cleaner_mutex_key;
 mysql_pfs_key_t purge_sys_pq_mutex_key;
 mysql_pfs_key_t recv_sys_mutex_key;
+mysql_pfs_key_t recv_writer_mutex_key;
 mysql_pfs_key_t temp_space_rseg_mutex_key;
 mysql_pfs_key_t undo_space_rseg_mutex_key;
 mysql_pfs_key_t trx_sys_rseg_mutex_key;
@@ -246,7 +249,7 @@ void MutexMonitor::enable() {
   LatchMetaData::iterator end = latch_meta.end();
 
   for (LatchMetaData::iterator it = latch_meta.begin(); it != end; ++it) {
-    if (*it != NULL) {
+    if (*it != nullptr) {
       (*it)->get_counter()->enable();
     }
   }
@@ -260,7 +263,7 @@ void MutexMonitor::disable() {
   LatchMetaData::iterator end = latch_meta.end();
 
   for (LatchMetaData::iterator it = latch_meta.begin(); it != end; ++it) {
-    if (*it != NULL) {
+    if (*it != nullptr) {
       (*it)->get_counter()->disable();
     }
   }
@@ -274,7 +277,7 @@ void MutexMonitor::reset() {
   LatchMetaData::iterator end = latch_meta.end();
 
   for (LatchMetaData::iterator it = latch_meta.begin(); it != end; ++it) {
-    if (*it != NULL) {
+    if (*it != nullptr) {
       (*it)->get_counter()->reset();
     }
   }

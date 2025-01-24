@@ -1,13 +1,13 @@
-RESET MASTER;
-ERROR 42000: RESET MASTER not allowed when node is in cluster
+RESET BINARY LOGS AND GTIDS;
+ERROR 42000: RESET BINARY LOGS AND GTIDS not allowed when node is in cluster
 SET SESSION WSREP_ON=OFF;
 CREATE TABLE t1 (f1 INTEGER) ENGINE=InnoDB;
 DROP TABLE t1;
-RESET MASTER;
+RESET BINARY LOGS AND GTIDS;
 SET SESSION WSREP_ON=ON;
 SHOW BINARY LOGS;
 Log_name	File_size	Encrypted
-mysqld-bin.000001	157	No
-include/show_binlog_events.inc
+mysqld-bin.000001	158	No
+include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 mysqld-bin.000001	#	Previous_gtids	#	#	

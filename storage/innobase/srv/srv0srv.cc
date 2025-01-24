@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2023, Oracle and/or its affiliates.
+Copyright (c) 1995, 2024, Oracle and/or its affiliates.
 Copyright (c) 2008, 2009 Google Inc.
 Copyright (c) 2009, Percona Inc.
 
@@ -21,12 +21,13 @@ This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -79,6 +80,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "row0log.h"
 #include "row0mysql.h"
 #include "sql/current_thd.h"
+#include "sql/sql_class.h"
 #include "sql_thd_internal_api.h"
 #include "srv0mon.h"
 
@@ -111,6 +113,7 @@ Srv_cpu_usage srv_cpu_usage;
 
 #ifdef INNODB_DD_TABLE
 /* true when upgrading. */
+/* TODO To be removed in WL#16210 */
 bool srv_is_upgrade_mode = false;
 bool srv_downgrade_logs = false;
 bool srv_upgrade_old_undo_found = false;
@@ -479,14 +482,6 @@ long long srv_buf_pool_curr_size = 0;
 ulong srv_buf_pool_dump_pct;
 /** Lock table size in bytes */
 ulint srv_lock_table_size = ULINT_MAX;
-
-/** The maximum time limit for a single LRU tail flush iteration by the page
-cleaner thread */
-ulint srv_cleaner_max_lru_time = 1000;
-
-/** The maximum time limit for a single flush list flush iteration by the page
-cleaner thread */
-ulint srv_cleaner_max_flush_time = 1000;
 
 /** Page cleaner LSN age factor formula option */
 ulong srv_cleaner_lsn_age_factor = SRV_CLEANER_LSN_AGE_FACTOR_HIGH_CHECKPOINT;
@@ -1224,11 +1219,6 @@ static void srv_init(void) {
       UT_NEW_THIS_FILE_PSI_KEY,
       ut::Count{srv_threads.m_page_cleaner_workers_n});
 
-  srv_threads.m_lru_managers_n = srv_buf_pool_instances;
-
-  srv_threads.m_lru_managers = ut::new_arr_withkey<IB_thread>(
-      UT_NEW_THIS_FILE_PSI_KEY, ut::Count{srv_threads.m_lru_managers_n});
-
   srv_sys = static_cast<srv_sys_t *>(
       ut::zalloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, srv_sys_sz));
 
@@ -1341,14 +1331,6 @@ void srv_free(void) {
   ut::free(srv_sys);
 
   srv_sys = nullptr;
-
-  if (srv_threads.m_lru_managers != nullptr) {
-    for (size_t i = 0; i < srv_threads.m_lru_managers_n; ++i) {
-      srv_threads.m_lru_managers[i] = {};
-    }
-    ut::free(srv_threads.m_lru_managers);
-    srv_threads.m_lru_managers = nullptr;
-  }
 
   if (srv_threads.m_page_cleaner_workers != nullptr) {
     for (size_t i = 0; i < srv_threads.m_page_cleaner_workers_n; ++i) {
@@ -3467,6 +3449,9 @@ void srv_purge_coordinator_thread() {
   srv_slot_t *slot;
 
   THD *thd = create_internal_thd();
+
+  // Allow purge in read only mode as well.
+  thd->set_skip_readonly_check();
 
   purge_sys->is_this_a_purge_thread = true;
 

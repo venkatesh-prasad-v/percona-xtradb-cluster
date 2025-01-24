@@ -1,18 +1,19 @@
 /*****************************************************************************
 
-Copyright (c) 2010, 2023, Oracle and/or its affiliates.
+Copyright (c) 2010, 2024, Oracle and/or its affiliates.
 Copyright (c) 2012, Facebook Inc.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -92,6 +93,9 @@ including each monitor's name, module it belongs to, a short
 description and its property/type and corresponding monitor_id.
 Please note: If you add a monitor here, please add its corresponding
 monitor_id to "enum monitor_id_value" structure in srv0mon.h file. */
+
+// NOTE: please keep the counter descriptions below in sync with the
+// description of the matching metrics in handler/ha_innodb.cc
 
 static monitor_info_t innodb_counter_info[] = {
     /* A dummy item to mark the module start, this is
@@ -335,7 +339,7 @@ static monitor_info_t innodb_counter_info[] = {
      MONITOR_DEFAULT_START, MONITOR_OVLD_PAGES0_READ},
 
     {"buffer_data_reads", "buffer",
-     "Amount of data read in bytes (innodb_data_reads)",
+     "Amount of data read in bytes (innodb_data_read)",
      static_cast<monitor_type_t>(MONITOR_EXISTING | MONITOR_DEFAULT_ON),
      MONITOR_DEFAULT_START, MONITOR_OVLD_BYTE_READ},
 
@@ -400,7 +404,7 @@ static monitor_info_t innodb_counter_info[] = {
      "Avg time (ms) spent for adaptive flushing recently per slot.",
      MONITOR_NONE, MONITOR_DEFAULT_START, MONITOR_FLUSH_ADAPTIVE_AVG_TIME_SLOT},
 
-    {"buffer_LRU_batch_flush_avg_time_slot", "buffer",  // TODO: always zero
+    {"buffer_LRU_batch_flush_avg_time_slot", "buffer",
      "Avg time (ms) spent for LRU batch flushing recently per slot.",
      MONITOR_NONE, MONITOR_DEFAULT_START,
      MONITOR_LRU_BATCH_FLUSH_AVG_TIME_SLOT},
@@ -410,7 +414,7 @@ static monitor_info_t innodb_counter_info[] = {
      MONITOR_NONE, MONITOR_DEFAULT_START,
      MONITOR_FLUSH_ADAPTIVE_AVG_TIME_THREAD},
 
-    {"buffer_LRU_batch_flush_avg_time_thread", "buffer",  // TODO: always zero
+    {"buffer_LRU_batch_flush_avg_time_thread", "buffer",
      "Avg time (ms) spent for LRU batch flushing recently per thread.",
      MONITOR_NONE, MONITOR_DEFAULT_START,
      MONITOR_LRU_BATCH_FLUSH_AVG_TIME_THREAD},
@@ -419,7 +423,7 @@ static monitor_info_t innodb_counter_info[] = {
      "Estimated time (ms) spent for adaptive flushing recently.", MONITOR_NONE,
      MONITOR_DEFAULT_START, MONITOR_FLUSH_ADAPTIVE_AVG_TIME_EST},
 
-    {"buffer_LRU_batch_flush_avg_time_est", "buffer",  // TODO: always zero
+    {"buffer_LRU_batch_flush_avg_time_est", "buffer",
      "Estimated time (ms) spent for LRU batch flushing recently.", MONITOR_NONE,
      MONITOR_DEFAULT_START, MONITOR_LRU_BATCH_FLUSH_AVG_TIME_EST},
 
@@ -431,7 +435,7 @@ static monitor_info_t innodb_counter_info[] = {
      "Number of adaptive flushes passed during the recent Avg period.",
      MONITOR_NONE, MONITOR_DEFAULT_START, MONITOR_FLUSH_ADAPTIVE_AVG_PASS},
 
-    {"buffer_LRU_batch_flush_avg_pass", "buffer",  // TODO: always zero
+    {"buffer_LRU_batch_flush_avg_pass", "buffer",
      "Number of LRU batch flushes passed during the recent Avg period.",
      MONITOR_NONE, MONITOR_DEFAULT_START, MONITOR_LRU_BATCH_FLUSH_AVG_PASS},
 
@@ -934,7 +938,8 @@ static monitor_info_t innodb_counter_info[] = {
      static_cast<monitor_type_t>(MONITOR_EXISTING | MONITOR_DEFAULT_ON),
      MONITOR_DEFAULT_START, MONITOR_OVLD_LOG_WAITS},
 
-    {"log_write_requests", "log", "Number of log write requests",
+    {"log_write_requests", "log",
+     "Number of log write requests (innodb_log_write_requests)",
      static_cast<monitor_type_t>(MONITOR_EXISTING | MONITOR_DEFAULT_ON),
      MONITOR_DEFAULT_START, MONITOR_OVLD_LOG_WRITE_REQUEST},
 
@@ -1758,7 +1763,8 @@ void srv_mon_process_existing_counter(
       value = srv_stats.page0_read;
       break;
 
-    /* innodb_data_reads, the total number of data reads */
+    /* innodb_data_read, the amount of data read since the server was started
+     * (in bytes) */
     case MONITOR_OVLD_BYTE_READ:
       value = srv_stats.data_read;
       break;

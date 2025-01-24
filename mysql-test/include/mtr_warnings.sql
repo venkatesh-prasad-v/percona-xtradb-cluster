@@ -1,15 +1,16 @@
--- Copyright (c) 2008, 2023, Oracle and/or its affiliates.
+-- Copyright (c) 2008, 2024, Oracle and/or its affiliates.
 --
 -- This program is free software; you can redistribute it and/or modify
 -- it under the terms of the GNU General Public License, version 2.0,
 -- as published by the Free Software Foundation.
 --
--- This program is also distributed with certain software (including
+-- This program is designed to work with certain software (including
 -- but not limited to OpenSSL) that is licensed under separate terms,
 -- as designated in a particular file or component or in included license
 -- documentation.  The authors of MySQL hereby grant you an additional
 -- permission to link the program and your derivative works with the
--- separately licensed software that they have included with MySQL.
+-- separately licensed software that they have either included with
+-- the program or referenced in the documentation.
 --
 -- This program is distributed in the hope that it will be useful,
 -- but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -332,12 +333,15 @@ INSERT INTO global_suppressions VALUES
  ("A message intended for a client cannot be sent there as no client-session is attached. Therefore, we're sending the information to the error-log instead: MY-001160 - Got an error writing communication packets.*"),
  ("A message intended for a client cannot be sent there as no client-session is attached. Therefore, we're sending the information to the error-log instead: MY-001158 - Got an error reading communication packets.*"),
  ("Failed to establish MySQL client connection in Group Replication.*."),
+ ("Failed to accept a MySQL connection for Group Replication. Group Replication plugin has an ongoing exclusive operation, like START, STOP or FORCE MEMBERS. Please retry."),
  ("\\[GCS\\] client closed the signalling connection .*"),
  ("\\[GCS\\] local_server: client closed the signalling connection.*"),
  ("\\[GCS\\] local_server: error reading from the signalling connection.*"),
  ("\\[GCS\\] Unable to start XCom Network Provider.*"),
  ("\\[GCS\\] Error initializing the group communication engine.*"),
  ("\\[GCS\\] The group communication engine could not set up its internal event notification mechanism.*"),
+ ("\\[GCS\\] Timed out while waiting for a connection via poll.*"),
+
 
  /*
    Warnings/errors related to SSL connection by mysqlx
@@ -480,7 +484,7 @@ INSERT INTO global_suppressions VALUES
    Warnings/errors seen when server is loaded with keyring plugin without
    enabling pxc_encrypt_cluster_traffic.
  */
- ("You have enabled keyring plugin. SST encryption is mandatory."),
+ ("You have enabled keyring component. SST encryption is mandatory."),
  ("No suitable '.*' service implementation found"),
 
 
@@ -490,6 +494,14 @@ INSERT INTO global_suppressions VALUES
  ("'--ssl-fips-mode' is deprecated and will be removed in a future release."),
 
  ("'mysql_native_password' is deprecated and will be removed in a future release."),
+
+ /*
+   Valgrind may issue some warning which are mixed with MySql warnings
+   resulting in lines like:
+   2024-10-01T12:42:38.064630Z 0 [Warning] [MY-010068] [Server] CA certificate /tmp/results/PXC/mysql-test/std_data/cacert.pem is s--26323-- WARNING: unhandled amd64-linux syscall: 333
+   This will not be handled by suppressions above as the string is cut in the middle.
+ */
+ (".*WARNING: unhandled amd64-linux syscall:.*"),
 
  ("THE_LAST_SUPPRESSION");
 

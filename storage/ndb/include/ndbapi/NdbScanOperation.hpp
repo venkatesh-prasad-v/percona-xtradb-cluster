@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -466,8 +467,9 @@ class NdbScanOperation : public NdbOperation {
    */
   const NdbOperation *lockCurrentTuple(
       NdbTransaction *takeOverTrans, const NdbRecord *result_rec,
-      char *result_row = 0, const unsigned char *result_mask = 0,
-      const NdbOperation::OperationOptions *opts = 0, Uint32 sizeOfOptions = 0);
+      char *result_row = nullptr, const unsigned char *result_mask = nullptr,
+      const NdbOperation::OperationOptions *opts = nullptr,
+      Uint32 sizeOfOptions = 0);
 
   /*
    * Update the current tuple, NdbRecord version.
@@ -477,8 +479,9 @@ class NdbScanOperation : public NdbOperation {
    */
   const NdbOperation *updateCurrentTuple(
       NdbTransaction *takeOverTrans, const NdbRecord *attr_rec,
-      const char *attr_row, const unsigned char *mask = 0,
-      const NdbOperation::OperationOptions *opts = 0, Uint32 sizeOfOptions = 0);
+      const char *attr_row, const unsigned char *mask = nullptr,
+      const NdbOperation::OperationOptions *opts = nullptr,
+      Uint32 sizeOfOptions = 0);
 
   /* Delete the current tuple. NdbRecord version.
    * The tuple can be read before being deleted.  Specify the columns to read
@@ -488,8 +491,9 @@ class NdbScanOperation : public NdbOperation {
    */
   const NdbOperation *deleteCurrentTuple(
       NdbTransaction *takeOverTrans, const NdbRecord *result_rec,
-      char *result_row = 0, const unsigned char *result_mask = 0,
-      const NdbOperation::OperationOptions *opts = 0, Uint32 sizeOfOptions = 0);
+      char *result_row = nullptr, const unsigned char *result_mask = nullptr,
+      const NdbOperation::OperationOptions *opts = nullptr,
+      Uint32 sizeOfOptions = 0);
 
   /**
    * Get NdbTransaction object for this scan operation
@@ -508,7 +512,8 @@ class NdbScanOperation : public NdbOperation {
                    NdbOperation::Type aType = NdbOperation::TableScan);
   ~NdbScanOperation() override;
 
-  NdbRecAttr *getValue_impl(const NdbColumnImpl *, char *aValue = 0) override;
+  NdbRecAttr *getValue_impl(const NdbColumnImpl *,
+                            char *aValue = nullptr) override;
   NdbRecAttr *getValue_NdbRecord_scan(const NdbColumnImpl *, char *aValue);
   NdbRecAttr *getValue_NdbRecAttr_scan(const NdbColumnImpl *, char *aValue);
 
@@ -744,7 +749,7 @@ inline int NdbScanOperation::deleteCurrentTuple() {
 
 inline int NdbScanOperation::deleteCurrentTuple(NdbTransaction *takeOverTrans) {
   void *res = takeOverScanOp(NdbOperation::DeleteRequest, takeOverTrans);
-  if (res == 0) return -1;
+  if (res == nullptr) return -1;
   return 0;
 }
 

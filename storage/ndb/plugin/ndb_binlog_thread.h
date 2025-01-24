@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2014, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2014, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -30,7 +31,8 @@
 #include <unordered_set>
 #include <vector>
 
-#include "storage/ndb/plugin/ndb_binlog_hooks.h"
+#include "storage/ndb/include/ndbapi/NdbDictionary.hpp"
+#include "storage/ndb/plugin/ndb_binlog_index_rows.h"
 #include "storage/ndb/plugin/ndb_component.h"
 #include "storage/ndb/plugin/ndb_metadata_sync.h"
 
@@ -38,7 +40,6 @@ class Ndb;
 class NdbEventOperation;
 class Ndb_sync_pending_objects_table;
 class Ndb_sync_excluded_objects_table;
-struct ndb_binlog_index_row;
 class injector;
 class injector_transaction;
 struct TABLE;
@@ -48,8 +49,6 @@ class Ndb_blobs_buffer;
 struct NDB_SHARE;
 
 class Ndb_binlog_thread : public Ndb_component {
-  Ndb_binlog_hooks binlog_hooks;
-  static int do_after_reset_master(void *);
   Ndb_metadata_sync metadata_sync;
 
   // Holds reference to share for ndb_apply_status table
@@ -110,38 +109,21 @@ class Ndb_binlog_thread : public Ndb_component {
   ~Ndb_binlog_thread() override;
 
   /*
-    @brief Check if purge of the specified binlog file can be handled
-    by the binlog thread.
-
-    @param filename Name of the binlog file which has been purged
-
-    @return true the binlog thread will handle the purge
-    @return false the binlog thread will not handle the purge
-  */
-  bool handle_purge(const char *filename);
-
-  /*
     @brief Iterate through the excluded objects and check if the mismatches
            are still present or if the user has manually synchronized the
            objects
 
     @param thd  Thread handle
-
-    @return void
   */
   void validate_sync_excluded_objects(THD *thd);
 
   /*
     @brief Clear the list of objects excluded from sync
-
-    @return void
   */
   void clear_sync_excluded_objects();
 
   /*
     @brief Clear the list of objects whose sync has been retried
-
-    @return void
   */
   void clear_sync_retry_objects();
 
@@ -191,8 +173,6 @@ class Ndb_binlog_thread : public Ndb_component {
     @brief Retrieve information about objects currently excluded from sync
 
     @param excluded_table  Pointer to excluded objects table object
-
-    @return void
   */
   void retrieve_sync_excluded_objects(
       Ndb_sync_excluded_objects_table *excluded_table);
@@ -208,8 +188,6 @@ class Ndb_binlog_thread : public Ndb_component {
     @brief Retrieve information about objects currently awaiting sync
 
     @param pending_table  Pointer to pending objects table object
-
-    @return void
   */
   void retrieve_sync_pending_objects(
       Ndb_sync_pending_objects_table *pending_table);
@@ -235,6 +213,26 @@ class Ndb_binlog_thread : public Ndb_component {
   */
   void log_ndb_error(const NdbError &ndberr) const;
 
+  /**
+    Write an incident message to the binlog.
+    @param inj           Pointer to the injector
+    @param thd           The thread handle
+    @param message       The message to write.
+  */
+  void inject_incident_message(injector *inj, THD *thd,
+                               const char *message) const;
+
+  /**
+    Write an incident for particular NDB event type to the binlog.
+    @param inj           Pointer to the injector
+    @param thd           The thread handle
+    @param event_type    Type of the NDB event problem that has occurred.
+    @param gap_epoch     The epoch when problem was detected.
+   */
+  void inject_incident_for_event(injector *inj, THD *thd,
+                                 NdbDictionary::Event::TableEvent event_type,
+                                 Uint64 gap_epoch) const;
+
   /*
      The Ndb_binlog_thread is supposed to make a continuous recording
      of the activity in the cluster to the mysqlds binlog. When this
@@ -250,18 +248,10 @@ class Ndb_binlog_thread : public Ndb_component {
     // from the cluster
     CLUSTER_DISCONNECT
   };
-  bool check_reconnect_incident(THD *thd, injector *inj,
+  void check_reconnect_incident(THD *thd, injector *inj,
                                 Reconnect_type incident_id) const;
 
-  /**
-    @brief Perform any purge requests which has been queued up earlier.
-
-    @param thd Thread handle
-  */
-  void recall_pending_purges(THD *thd);
-  std::mutex m_purge_mutex;                   // Protects m_pending_purges
-  std::vector<std::string> m_pending_purges;  // List of pending purges
-
+ private:
   /**
      @brief Remove event operations belonging to one Ndb object
 
@@ -308,19 +298,52 @@ class Ndb_binlog_thread : public Ndb_component {
    */
   void fix_per_epoch_trans_settings(THD *thd);
 
+  /**
+    @brief Release THD resources (if necessary).
+    @note The common use case for THD's usage in a session thread is to reset
+    its state and clear used memory after each statement, thus most
+    called MySQL functions assume that memory can be allocated in any of the
+    mem_root's of THD and it will be released at a later time.  The THD owned
+    by the long lived ndb_binlog thread also need to release resources
+    at regular intervals, this functon is called after each epoch
+    (instead of statement) to check if there are any resources to release.
+
+     @param thd Thread handle
+  */
+  static void release_thd_resources(THD *thd);
+
+  Ndb_binlog_index_rows m_binlog_index_rows;
+
+  // Epoch context handler
+  struct EpochContext {
+    // Counter for rows in event
+    unsigned int trans_row_count = 0;
+    // Counter for replicated rows in event
+    unsigned int replicated_row_count = 0;
+
+    /**
+      @brief Check if epoch is considered empty in regards to the
+      number of rows recorded in the epoch transaction. An epoch is
+      considered empty if 1) it did not record any 'real' rows in the
+      binlog (from user tables) AND 2) if logging ndb_apply_status
+      updates, it received updates applied by another replica (that
+      were not on ndb_apply_status).
+
+      @retval true for empty epoch
+    */
+    bool is_empty_epoch() const;
+  };
+
   // Functions for handling received events
   int handle_data_get_blobs(const TABLE *table,
                             const NdbValue *const value_array,
                             Ndb_blobs_buffer &buffer, ptrdiff_t ptrdiff) const;
   void handle_data_unpack_record(TABLE *table, const NdbValue *value,
                                  MY_BITMAP *defined, uchar *buf) const;
-  int handle_error(NdbEventOperation *pOp) const;
   void handle_non_data_event(THD *thd, NdbEventOperation *pOp,
-                             ndb_binlog_index_row &row);
+                             NdbDictionary::Event::TableEvent type);
   int handle_data_event(const NdbEventOperation *pOp,
-                        ndb_binlog_index_row **rows,
-                        injector_transaction &trans, unsigned &trans_row_count,
-                        unsigned &replicated_row_count) const;
+                        injector_transaction &trans, EpochContext &epoch_ctx);
   bool handle_events_for_epoch(THD *thd, injector *inj, Ndb *i_ndb,
                                NdbEventOperation *&i_pOp,
                                const Uint64 current_epoch);
@@ -328,13 +351,9 @@ class Ndb_binlog_thread : public Ndb_component {
   // Functions for injecting events
   bool inject_apply_status_write(injector_transaction &trans,
                                  ulonglong gci) const;
-  void inject_incident(injector *inj, THD *thd,
-                       NdbDictionary::Event::TableEvent event_type,
-                       Uint64 gap_epoch) const;
   void inject_table_map(injector_transaction &trans, Ndb *ndb) const;
   void commit_trans(injector_transaction &trans, THD *thd, Uint64 current_epoch,
-                    ndb_binlog_index_row *rows, unsigned trans_row_count,
-                    unsigned replicated_row_count);
+                    EpochContext epoch_ctx);
 
   // Cache for NDB metadata
   class Metadata_cache {

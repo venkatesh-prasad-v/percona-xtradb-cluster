@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2007, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2007, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -42,6 +43,8 @@ static struct my_option my_long_options[] = {
     NdbStdOpt::ndb_connectstring,
     NdbStdOpt::connectstring,
     NdbStdOpt::ndb_nodeid,
+    NdbStdOpt::tls_search_path,
+    NdbStdOpt::mgm_tls,
     NDB_STD_OPT_DEBUG{"loop", 'l', "loops", &opt_loop, &opt_loop, 0, GET_INT,
                       REQUIRED_ARG, opt_loop, 0, 0, 0, 0, 0},
     {"sleep", 's', "Sleep (ms) between connection attempt", &opt_sleep,
@@ -67,6 +70,7 @@ int main(int argc, char **argv) {
 
   for (int i = 0; i < opt_loop; i++) {
     Ndb_cluster_connection con(opt_ndb_connectstring, opt_ndb_nodeid);
+    con.configure_tls(opt_tls_search_path, opt_mgm_tls);
     if (con.connect(12, 5, 1) != 0) {
       ndbout << "Unable to connect to management server."
              << "loop: " << i << "(of " << opt_loop << ")" << endl;

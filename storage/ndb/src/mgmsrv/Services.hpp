@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -37,6 +38,7 @@
 class MgmApiSession : public SocketServer::Session {
   static void list_session(SocketServer::Session *_s, void *data);
   static void get_session(SocketServer::Session *_s, void *data);
+  static void show_cert(SocketServer::Session *_s, void *data);
 
  private:
   typedef Parser<MgmApiSession> Parser_t;
@@ -50,9 +52,12 @@ class MgmApiSession : public SocketServer::Session {
   int m_stopSelf;  // -1 is restart, 0 do nothing, 1 stop
   NdbMutex *m_mutex;
 
+  unsigned int m_sessionAuthLevel{0};
+
   // for listing sessions and other fun:
   Parser_t::Context *m_ctx;
   Uint64 m_session_id;
+  struct x509_st *m_cert{nullptr};
 
   int m_errorInsert;
 
@@ -74,6 +79,10 @@ class MgmApiSession : public SocketServer::Session {
   void runSession() override;
 
   static const unsigned SOCKET_TIMEOUT = 30000;
+
+  int checkAuth(struct CmdAuth *) const;
+  void reportAuthFailure(int code);
+  int on_verify(int, struct x509_store_ctx_st *);
 
   void getConfig(Parser_t::Context &ctx, const class Properties &args, bool v2);
   void getConfig_v1(Parser_t::Context &ctx, const class Properties &args);
@@ -109,6 +118,7 @@ class MgmApiSession : public SocketServer::Session {
   void stopAll(Parser_t::Context &ctx, const class Properties &args);
   void start(Parser_t::Context &ctx, const class Properties &args);
   void startAll(Parser_t::Context &ctx, const class Properties &args);
+  void startTls(Parser_t::Context &ctx, const class Properties &args);
   void bye(Parser_t::Context &ctx, const class Properties &args);
   void endSession(Parser_t::Context &ctx, const class Properties &args);
   void setLogLevel(Parser_t::Context &ctx, const class Properties &args);
@@ -136,6 +146,8 @@ class MgmApiSession : public SocketServer::Session {
   void report_event(Parser_t::Context &ctx, Properties const &args);
 
   void listSessions(Parser_t::Context &ctx, Properties const &args);
+  void listCerts(Parser_t::Context &ctx, Properties const &args);
+  void getTlsStats(Parser_t::Context &ctx, Properties const &args);
 
   void getSessionId(Parser_t::Context &ctx, Properties const &args);
   void getSession(Parser_t::Context &ctx, Properties const &args);

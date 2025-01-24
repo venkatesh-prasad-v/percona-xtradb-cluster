@@ -1,15 +1,16 @@
-/* Copyright (c) 2018, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
 as published by the Free Software Foundation.
 
-This program is also distributed with certain software (including
+This program is designed to work with certain software (including
 but not limited to OpenSSL) that is licensed under separate terms,
 as designated in a particular file or component or in included license
 documentation.  The authors of MySQL hereby grant you an additional
 permission to link the program and your derivative works with the
-separately licensed software that they have included with MySQL.
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -29,18 +30,17 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "field_types.h"   /* MYSQL_TYPE_ENUM, MYSQL_TYPE_JSON */
 #include "lex_string.h"    /* LEX_CSTRING */
-#include "m_ctype.h"       /* my_charset_* */
-#include "m_string.h"      /* STRING_WITH_LEN */
 #include "my_base.h"       /* HA_ERR_* */
 #include "my_dbug.h"       /* DBUG macros */
 #include "my_inttypes.h"   /* MYF, uchar, longlong, ulonglong */
-#include "my_loglevel.h"   /* WARNING_LEVEL, loglevel, ERROR_LEVEL */
 #include "my_sqlcommand.h" /* SQLCOM_ALTER_USER, SQLCOM_GRANT */
 #include "my_sys.h"        /* my_error */
 #include "mysql/components/services/bits/psi_bits.h" /* PSI_NOT_INSTRUMENTED */
 #include "mysql/components/services/log_builtins.h"  /* for LogEvent, LogErr */
+#include "mysql/my_loglevel.h"                       /* WARNING_LEVEL */
 #include "mysql/plugin.h" /* st_mysql_plugin, MYSQL_AUTHENTICATION_PLUGIN */
 #include "mysql/plugin_auth.h"      /* st_mysql_auth */
+#include "mysql/strings/m_ctype.h"  /* my_charset_* */
 #include "mysql_time.h"             /* MYSQL_TIME, MYSQL_TIMESTAMP_ERROR */
 #include "mysqld_error.h"           /* ER_* */
 #include "prealloced_array.h"       /* Prealloced_array */
@@ -70,6 +70,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #include "sql/table.h"            /* TABLE, TABLE_SHARE, ... */
 #include "sql/tztime.h"           /* Time_zone */
 #include "sql_string.h"           /* String */
+#include "string_with_len.h"      /* STRING_WITH_LEN */
 #include "template_utils.h"       /* down_cast */
 #include "typelib.h"              /* TYPELIB */
 #include "violite.h"              /* SSL_* */
@@ -132,7 +133,8 @@ static std::map<const User_attribute_type, const std::string>
 
 Acl_user_attributes::Acl_user_attributes(MEM_ROOT *mem_root,
                                          bool read_restrictions,
-                                         Auth_id &auth_id, ulong global_privs)
+                                         Auth_id &auth_id,
+                                         Access_bitmask global_privs)
     : m_mem_root(mem_root),
       m_read_restrictions(read_restrictions),
       m_auth_id(auth_id),
@@ -148,7 +150,7 @@ Acl_user_attributes::Acl_user_attributes(MEM_ROOT *mem_root,
                                          Auth_id &auth_id,
                                          Restrictions *restrictions,
                                          I_multi_factor_auth *mfa)
-    : Acl_user_attributes(mem_root, read_restrictions, auth_id, ~NO_ACCESS) {
+    : Acl_user_attributes(mem_root, read_restrictions, auth_id, ALL_ACCESS) {
   if (restrictions) m_restrictions = *restrictions;
   m_mfa = mfa;
 }
@@ -175,16 +177,16 @@ bool Acl_user_attributes::consume_user_attributes_json(Json_dom_ptr json) {
 }
 
 void Acl_user_attributes::report_and_remove_invalid_db_restrictions(
-    DB_restrictions &db_restrictions, ulong mask, enum loglevel level,
+    DB_restrictions &db_restrictions, Access_bitmask mask, enum loglevel level,
     ulonglong errcode) {
   if (!db_restrictions.is_empty()) {
     for (auto &itr : db_restrictions()) {
-      ulong privs = itr.second;
+      Access_bitmask privs = itr.second;
       if (privs != (privs & mask)) {
         std::string invalid_privs;
         std::string separator(", ");
         bool second = false;
-        ulong filtered_privs = privs & ~mask;
+        Access_bitmask filtered_privs = privs & ~mask;
         if (filtered_privs)
           db_restrictions.remove(itr.first.c_str(), filtered_privs);
         while (filtered_privs != 0) {
@@ -256,7 +258,7 @@ bool Acl_user_attributes::deserialize_password_lock(
         return true;
       const Json_int *password_lock_time_days =
           down_cast<const Json_int *>(password_lock_time_days_dom);
-      longlong val = password_lock_time_days->value();
+      const longlong val = password_lock_time_days->value();
       if (val < -1 || val > INT_MAX) return true;
       m_password_lock.password_lock_time_days = val;
     }
@@ -270,7 +272,7 @@ bool Acl_user_attributes::deserialize_password_lock(
       }
       const Json_int *failed_login_attempts =
           down_cast<const Json_int *>(failed_login_attempts_dom);
-      longlong val = failed_login_attempts->value();
+      const longlong val = failed_login_attempts->value();
       if (val < 0 || val > UINT_MAX) {
         m_password_lock.password_lock_time_days = 0;
         return true;
@@ -460,8 +462,9 @@ Acl_table_user_writer_status::Acl_table_user_writer_status()
   methods
 */
 Acl_table_user_writer::Acl_table_user_writer(
-    THD *thd, TABLE *table, LEX_USER *combo, ulong rights, bool revoke_grant,
-    bool can_create_user, Pod_user_what_to_update what_to_update,
+    THD *thd, TABLE *table, LEX_USER *combo, Access_bitmask rights,
+    bool revoke_grant, bool can_create_user,
+    Pod_user_what_to_update what_to_update,
     Restrictions *restrictions = nullptr, I_multi_factor_auth *mfa = nullptr)
     : Acl_table(thd, table, acl_table::Acl_table_operation::OP_INSERT),
       m_has_user_application_user_metadata(false),
@@ -492,7 +495,7 @@ Acl_table_user_writer::~Acl_table_user_writer() {
 */
 Acl_table_user_writer_status Acl_table_user_writer::driver() {
   bool builtin_plugin = false;
-  bool update_password = (m_what_to_update.m_what & PLUGIN_ATTR);
+  const bool update_password = (m_what_to_update.m_what & PLUGIN_ATTR);
   Table_op_error_code error;
   LEX *lex = m_thd->lex;
   Acl_table_user_writer_status return_value;
@@ -576,7 +579,7 @@ Acl_table_user_writer_status Acl_table_user_writer::driver() {
     @retval true  Error positioning table.
 */
 bool Acl_table_user_writer::setup_table(int &error, bool &builtin_plugin) {
-  bool update_password = (m_what_to_update.m_what & PLUGIN_ATTR);
+  const bool update_password = (m_what_to_update.m_what & PLUGIN_ATTR);
 
   switch (m_operation) {
     case Acl_table_operation::OP_INSERT:
@@ -618,7 +621,7 @@ bool Acl_table_user_writer::setup_table(int &error, bool &builtin_plugin) {
           now.
         */
         if (m_revoke_grant) {
-          bool ret = report_missing_user_grant_message(
+          const bool ret = report_missing_user_grant_message(
               m_thd, false, m_combo->user.str, m_combo->host.str, nullptr,
               ER_NONEXISTING_GRANT);
           /*
@@ -855,9 +858,9 @@ bool Acl_table_user_writer::update_privileges(
     Acl_table_user_writer_status &return_value) {
   if (m_what_to_update.m_what & ACCESS_RIGHTS_ATTR) {
     /* Update table columns with new privileges */
-    char what = m_revoke_grant ? 'N' : 'Y';
+    const char what = m_revoke_grant ? 'N' : 'Y';
     Field **tmp_field;
-    ulong priv;
+    Access_bitmask priv;
     for (tmp_field = m_table->field + 2, priv = SELECT_ACL;
          *tmp_field && (*tmp_field)->real_type() == MYSQL_TYPE_ENUM &&
          ((Field_enum *)(*tmp_field))->typelib->count == 2;
@@ -884,8 +887,8 @@ bool Acl_table_user_writer::update_privileges(
   }
 
   return_value.updated_rights = get_user_privileges();
-  DBUG_PRINT("info",
-             ("Privileges on disk are now %lu", return_value.updated_rights));
+  DBUG_PRINT("info", ("Privileges on disk are now %" PRIu32,
+                      return_value.updated_rights));
   DBUG_PRINT("info", ("table fields: %d", m_table->s->fields));
 
   return false;
@@ -977,7 +980,7 @@ bool Acl_table_user_writer::update_ssl_properties() {
 */
 bool Acl_table_user_writer::update_user_resources() {
   if (m_what_to_update.m_what & RESOURCE_ATTR) {
-    USER_RESOURCES mqh = m_thd->lex->mqh;
+    const USER_RESOURCES mqh = m_thd->lex->mqh;
     if (mqh.specified_limits & USER_RESOURCES::QUERIES_PER_HOUR)
       m_table->field[m_table_schema->max_questions_idx()]->store(
           (longlong)mqh.questions, true);
@@ -1299,10 +1302,10 @@ bool Acl_table_user_writer::write_user_attributes_column(
 
   @returns Bitmask representing global privileges granted to given account
 */
-ulong Acl_table_user_writer::get_user_privileges() {
+Access_bitmask Acl_table_user_writer::get_user_privileges() {
   uint next_field;
   char *priv_str;
-  ulong rights =
+  Access_bitmask rights =
       get_access(m_table, m_table_schema->select_priv_idx(), &next_field);
   if (m_table->s->fields > m_table_schema->drop_role_priv_idx()) {
     priv_str =
@@ -1429,7 +1432,7 @@ void Acl_table_user_reader::reset_acl_user(ACL_USER &user) {
   @param [out] user ACL_USER structure
 */
 void Acl_table_user_reader::read_account_name(ACL_USER &user) {
-  bool check_no_resolve = specialflag & SPECIAL_NO_RESOLVE;
+  const bool check_no_resolve = specialflag & SPECIAL_NO_RESOLVE;
   user.host.update_hostname(
       get_field(&m_mem_root, m_table->field[m_table_schema->host_idx()]));
   user.user =
@@ -1651,7 +1654,7 @@ bool Acl_table_user_reader::read_plugin_info(
           g_cached_authentication_plugins->get_cached_plugin_ref(
               PLUGIN_MYSQL_NATIVE_PASSWORD);
       if (native_plugin) {
-        uint password_len = password ? strlen(password) : 0;
+        const uint password_len = password ? strlen(password) : 0;
         st_mysql_auth *auth = (st_mysql_auth *)plugin_decl(native_plugin)->info;
         if (auth->validate_authentication_string(password, password_len) == 0) {
           // auth_string takes precedence over password
@@ -1896,7 +1899,7 @@ bool Acl_table_user_reader::read_user_attributes(ACL_USER &user) {
       }
 
       // 1. Read additional password
-      std::string additional_password =
+      const std::string additional_password =
           user_attributes.get_additional_password();
       if (additional_password.length()) {
         user.credentials[SECOND_CRED].m_auth_string.length =
@@ -1953,9 +1956,10 @@ bool Acl_table_user_reader::read_user_attributes(ACL_USER &user) {
   @param [in] user ACL_USER structure
 */
 void Acl_table_user_reader::add_row_to_acl_users(ACL_USER &user) {
-  LEX_CSTRING auth = {user.credentials[PRIMARY_CRED].m_auth_string.str,
-                      user.credentials[PRIMARY_CRED].m_auth_string.length};
-  LEX_CSTRING second_auth = {
+  const LEX_CSTRING auth = {
+      user.credentials[PRIMARY_CRED].m_auth_string.str,
+      user.credentials[PRIMARY_CRED].m_auth_string.length};
+  const LEX_CSTRING second_auth = {
       user.credentials[SECOND_CRED].m_auth_string.str,
       user.credentials[SECOND_CRED].m_auth_string.length};
   LEX_ALTER password_life;
@@ -2073,32 +2077,6 @@ bool Acl_table_user_reader::driver() {
 Password_lock::Password_lock()
     : password_lock_time_days(0), failed_login_attempts(0) {}
 
-Password_lock &Password_lock::operator=(const Password_lock &other) {
-  if (this != &other) {
-    password_lock_time_days = other.password_lock_time_days;
-    failed_login_attempts = other.failed_login_attempts;
-  }
-  return *this;
-}
-
-Password_lock &Password_lock::operator=(Password_lock &&other) {
-  if (this != &other) {
-    std::swap(password_lock_time_days, other.password_lock_time_days);
-    std::swap(failed_login_attempts, other.failed_login_attempts);
-  }
-  return *this;
-}
-
-Password_lock::Password_lock(const Password_lock &other) {
-  password_lock_time_days = other.password_lock_time_days;
-  failed_login_attempts = other.failed_login_attempts;
-}
-
-Password_lock::Password_lock(Password_lock &&other) {
-  std::swap(password_lock_time_days, other.password_lock_time_days);
-  std::swap(failed_login_attempts, other.failed_login_attempts);
-}
-
 }  // namespace acl_table
 
 /**
@@ -2123,8 +2101,9 @@ Password_lock::Password_lock(Password_lock &&other) {
                   processing subsequent user specified in the ACL statement.
 */
 
-int replace_user_table(THD *thd, TABLE *table, LEX_USER *combo, ulong rights,
-                       bool revoke_grant, bool can_create_user,
+int replace_user_table(THD *thd, TABLE *table, LEX_USER *combo,
+                       Access_bitmask rights, bool revoke_grant,
+                       bool can_create_user,
                        acl_table::Pod_user_what_to_update &what_to_update,
                        Restrictions *restrictions /*= nullptr*/,
                        I_multi_factor_auth *mfa /*= nullptr*/) {
@@ -2162,9 +2141,9 @@ int replace_user_table(THD *thd, TABLE *table, LEX_USER *combo, ulong rights,
   if (!(return_value.error || return_value.skip_cache_update)) {
     bool old_row_exists = (user_table.get_operation_mode() ==
                            acl_table::Acl_table_operation::OP_UPDATE);
-    bool builtin_plugin =
+    const bool builtin_plugin =
         auth_plugin_is_built_in(combo->first_factor_auth_info.plugin.str);
-    bool update_password = (what_to_update.m_what & PLUGIN_ATTR);
+    const bool update_password = (what_to_update.m_what & PLUGIN_ATTR);
 
     /*
       Convert the time when the password was changed from timeval
@@ -2385,7 +2364,7 @@ bool read_user_application_user_metadata_from_table(
   }
   auto attributes_dom = Json_dom::parse(
       attributes_field, strlen(attributes_field), [](const char *, size_t) {},
-      JsonDocumentDefaultDepthHandler);
+      JsonDepthErrorHandler);
   table->file->ha_index_end();
   if (attributes_dom == nullptr ||
       attributes_dom->json_type() != enum_json_type::J_OBJECT) {
@@ -2397,9 +2376,8 @@ bool read_user_application_user_metadata_from_table(
       json_ob->get(acl_table::attribute_type_to_str
                        [acl_table::User_attribute_type::METADATA]);
   if (metadata_dom == nullptr) return false;  // success but out string is empty
-  Json_wrapper wr(metadata_dom, true);
-  wr.to_string(metadata_str, true, __FUNCTION__,
-               JsonDocumentDefaultDepthHandler);
+  const Json_wrapper wr(metadata_dom, true);
+  wr.to_string(metadata_str, true, __FUNCTION__, JsonDepthErrorHandler);
   if (!mode_no_backslash_escapes) double_the_backslash(metadata_str);
   return false;
 }

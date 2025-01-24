@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -25,15 +26,35 @@
 #ifndef AsyncFile_H
 #define AsyncFile_H
 
-#include "kernel/signaldata/FsOpenReq.hpp"
-#include "portlib/ndb_file.h"
-#include "util/ndbxfrm_file.h"
+#include <atomic>
 
 #include <kernel_types.h>
 #include "AsyncIoThread.hpp"
 #include "Filename.hpp"
+#include "kernel/signaldata/FsOpenReq.hpp"
+#include "portlib/NdbTick.h"
+#include "portlib/ndb_file.h"
+#include "util/ndbxfrm_file.h"
 
 #define JAM_FILE_ID 391
+
+/*
+ * This define is used to mark up code that is added to workaround issues seen
+ * with some distributed filesystem.
+ *
+ * For example that unlink(file) may succeed removing file but still return
+ * error ENOENT.
+ */
+#define UNRELIABLE_DISTRIBUTED_FILESYSTEM 1
+
+#if UNRELIABLE_DISTRIBUTED_FILESYSTEM
+#if defined(VM_TRACE) || !defined(NDEBUG) || defined(ERROR_INSERT)
+#define TEST_UNRELIABLE_DISTRIBUTED_FILESYSTEM 1
+#endif
+#endif
+#ifndef TEST_UNRELIABLE_DISTRIBUTED_FILESYSTEM
+#define TEST_UNRELIABLE_DISTRIBUTED_FILESYSTEM 0
+#endif
 
 #ifndef _WIN32
 static inline int get_last_os_error() { return errno; }
@@ -78,6 +99,13 @@ class AsyncFile {
   void readReq(Request *request);
   void writeReq(Request *request);
 
+#if UNRELIABLE_DISTRIBUTED_FILESYSTEM
+  bool check_and_log_if_remove_failure_ok(const char *pathname);
+#endif
+#if TEST_UNRELIABLE_DISTRIBUTED_FILESYSTEM
+  bool check_inject_and_log_extra_remove(const char *pathname);
+#endif
+
   /**
    * Implementers of AsyncFile interface
    * should implement the following
@@ -90,10 +118,16 @@ class AsyncFile {
   void attach(AsyncIoThread *thr);
   void detach(AsyncIoThread *thr);
 
+  static int probe_directory_direct_io(const char param[],
+                                       const char dirname[]);
+
  private:
   int ndbxfrm_append(Request *request, ndbxfrm_input_iterator *in);
 
   bool check_odirect_request(const char *buf, size_t sz, ndb_off_t offset);
+  void log_set_odirect_result(int result);
+  static void log_set_odirect_result(const char *param, const char *filename,
+                                     int result);
 
   Request *m_current_request, *m_last_request;
 
@@ -120,6 +154,16 @@ class AsyncFile {
   Uint32 theWriteBufferSize;
 
   Ndbfs &m_fs;
+
+  // ODirect log suppression state
+  static constexpr Uint64 odirect_set_log_suppress_period_s =
+      4 * 60 * 60;  // 4 hours in seconds
+  struct odirect_set_log_state {
+    std::atomic<NDB_TICKS> last_warning;
+    std::atomic<Uint32> failures = 0;
+    std::atomic<Uint32> successes = 0;
+  };
+  static odirect_set_log_state odirect_set_log_bp[FsOpenReq::BP_MAX];
 };
 
 inline void AsyncFile::set_buffer(Uint32 rg, Ptr<GlobalPage> ptr, Uint32 cnt) {

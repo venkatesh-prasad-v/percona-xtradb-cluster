@@ -8,11 +8,11 @@
 --let $ofile= $MYSQLTEST_VARDIR/tmp/node.2.err
 
 --connection node_1
-CALL mtr.add_suppression(".*State transfer to .* failed: -125.*");
+CALL mtr.add_suppression(".*State transfer to .* failed: Operation canceled.*");
 CALL mtr.add_suppression(".*SST request is null, SST canceled.*");
 
 --connection node_3
-CALL mtr.add_suppression(".*State transfer to .* failed: -125.*");
+CALL mtr.add_suppression(".*State transfer to .* failed: Operation canceled.*");
 CALL mtr.add_suppression(".*SST request is null, SST canceled.*");
 
 --connection node_1
@@ -60,19 +60,23 @@ INSERT INTO t1 VALUES (6);
 INSERT INTO t1 VALUES (7);
 
 --connection node_2
---let $restart_parameters = "restart: --wsrep_provider_options='base_port=$NODE_GALERAPORT_2' --wsrep_sst_method=ist_only --log-error=$ofile"
---let $expect_crash_on_start = 1
+--let $restart_parameters = "--wsrep_provider_options='base_port=$NODE_GALERAPORT_2' --wsrep_sst_method=ist_only --log-error=$ofile"
 --let $do_not_echo_parameters = 1
---source include/start_mysqld.inc
+--source include/start_mysqld_expecting_crash.inc
 
 # Now start node_2 as standalone. t1 still should have 4 rows.
 --let $restart_parameters = "restart: --wsrep_provider=none"
---let $expect_crash_on_start = 0
 --let $do_not_echo_parameters = 1
 --source include/start_mysqld.inc
 --let $assert_text = Table t1 still should have 4 rows
 --let $assert_cond = COUNT(*) = 4 FROM t1;
 --source include/assert.inc
+
+--let $assert_text = Assert that node_2 failed to join without SST
+--let $assert_file = $ofile
+--let $assert_select = Local state UUID 00000000-0000-0000-0000-000000000000 is different from group state
+--let $assert_count = 1
+--source include/assert_grep.inc
 
 # node_2 can recover only via full SST
 --let $restart_parameters = "restart: --wsrep_provider_options='base_port=$NODE_GALERAPORT_2'"
@@ -84,11 +88,6 @@ INSERT INTO t1 VALUES (7);
 --let $assert_cond = COUNT(*) = 7 FROM t1;
 --source include/assert.inc
 
---let $assert_text = Assert that node_2 failed to join without SST
---let $assert_file = $ofile
---let $assert_select = Local state UUID 00000000-0000-0000-0000-000000000000 is different from group state
---let $assert_count = 1
---source include/assert_grep.inc
 
 # Case 3:
 # node_2 should fail joining the cluster, because the requested donor
@@ -130,24 +129,27 @@ SET GLOBAL wsrep_desync=1;
 
 # now start node_2, but pointing to node_3 as the donor
 --connection node_2
---let $restart_parameters = "restart: --wsrep_provider_options='base_port=$NODE_GALERAPORT_2' --wsrep_sst_method=ist_only --log-error=$ofile"
+--let $restart_parameters = "--wsrep_provider_options='base_port=$NODE_GALERAPORT_2' --wsrep_sst_method=ist_only --log-error=$ofile"
 --let $_expect_file_name = $MYSQLTEST_VARDIR/tmp/mysqld.2.expect
---let $expect_crash_on_start = 1
 --let $do_not_echo_parameters = 1
---source include/start_mysqld.inc
+--source include/start_mysqld_expecting_crash.inc
+
+# Note: Have to postpone ofile grep till the server is started again, because it queries the server
 
 # node_2 can recover only via full SST if donor is node_3
 --let $restart_parameters = "restart: --wsrep_provider_options='base_port=$NODE_GALERAPORT_2'"
---let $expect_crash_on_start = 0
 --let $do_not_echo_parameters = 1
 --source include/start_mysqld.inc
 --source include/galera_wait_ready.inc
+
+# Now grep the ofile
 
 --let $assert_text = Assert that node_2 failed to join without SST
 --let $assert_file = $ofile
 --let $assert_select = Will never receive state. Need to abort.
 --let $assert_count = 1
 --source include/assert_grep.inc
+
 
 --let $assert_text = Table t1 should have 10 rows
 --let $assert_cond = COUNT(*) = 10 FROM t1;

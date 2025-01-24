@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -43,6 +44,8 @@ static const char *_dbname = "TEST_DB";
 
 static struct my_option my_long_options[] = {
     NDB_STD_OPTS("spj_test"),
+    NdbStdOpt::tls_search_path,
+    NdbStdOpt::mgm_tls,
     {"database", 'd', "Name of database table is in", &_dbname, &_dbname, 0,
      GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
     {"scan", 's', "Table scan followed by key lookup", &_scan, &_scan, 0,
@@ -84,6 +87,7 @@ int main(int argc, char **argv) {
     return NDBT_ProgramExit(NDBT_WRONGARGS);
 
   Ndb_cluster_connection con(opt_ndb_connectstring);
+  con.configure_tls(opt_tls_search_path, opt_mgm_tls);
   if (con.connect(12, 5, 1) != 0) {
     ndbout << "Unable to connect to management server." << endl;
     return NDBT_ProgramExit(NDBT_FAILED);
@@ -126,7 +130,7 @@ int main(int argc, char **argv) {
 #if 0
   /**
      select STRAIGHT_JOIN *
-     from t1 join t1 as t2 
+     from t1 join t1 as t2
      where t2.a = t1.b and t1.b <= 100 and t2.b <= 3;
    *
    * - ScanFrag
@@ -167,7 +171,7 @@ int main(int argc, char **argv) {
     0x00000002, // len user projection
     0xfff00002, // read all
     0xffe90000, // read any value
-    
+
     // LookupParameters
     0x000d0001, // type/len
     0x00000009, // bits

@@ -119,13 +119,13 @@ drop table t1;
 --connection node_1
 --echo #node-1
 SET SESSION wsrep_on=OFF;
-RESET MASTER;
+RESET BINARY LOGS AND GTIDS;
 SET SESSION wsrep_on=ON;
 
 --connection node_2
 --echo #node-2
 SET SESSION wsrep_on=OFF;
-RESET MASTER;
+RESET BINARY LOGS AND GTIDS;
 SET SESSION wsrep_on=ON;
 
 --connection node_1
@@ -141,4 +141,4 @@ drop table t;
 --let $binlog_file = mysqld-bin.000001
 --let $binlog_start = 125
 --let $keep_gtid_events = 1
---source include/show_binlog_events.inc
+--source include/rpl/deprecated/show_binlog_events.inc

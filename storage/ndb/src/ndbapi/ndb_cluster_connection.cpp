@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2004, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2004, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -33,6 +34,8 @@
 #include <ndb_limits.h>
 #include <ndb_version.h>
 #include <ConfigRetriever.hpp>
+#include <ConsoleLogHandler.hpp>
+#include <LogHandler.hpp>
 #include <NdbOut.hpp>
 #include <mgmapi_configuration.hpp>
 #include "NdbDictionaryImpl.hpp"
@@ -52,6 +55,10 @@ NdbMutex *ndb_print_state_mutex = nullptr;
 #include <EventLogger.hpp>
 
 static int g_ndb_connection_count = 0;
+
+class NdbApiInternalLogHandler;
+class LoggerTest;
+static NdbApiInternalLogHandler *g_api_internal_log_handler = nullptr;
 
 /*
  * Ndb_cluster_connection
@@ -174,7 +181,8 @@ int Ndb_cluster_connection::start_connect_thread(
 }
 
 void Ndb_cluster_connection::set_optimized_node_selection(int val) {
-  m_impl.m_optimized_node_selection = val;
+  // Set default value used for new Ndb objects
+  m_impl.m_conn_default_optimized_node_selection = val;
 }
 
 void Ndb_cluster_connection_impl::init_get_next_node(
@@ -369,6 +377,108 @@ const char *Ndb_cluster_connection::get_latest_error_msg() const {
   return m_impl.m_latest_error_msg.c_str();
 }
 
+/**
+ * NdbApiInternalLogHandler
+ *
+ * This class allows logs to be routed either to some default
+ * log handler, or a user supplied 'consumer' object.
+ *
+ * One instance of the class is created by the first
+ * ndb_cluster_connection in the process to be created.
+ *
+ * This instance continues to exist even if the process
+ * returns to zero instances.
+ *
+ * When the global eventLogger is destroyed in ndb_end(),
+ * this instance will be cleaned up.
+ */
+class NdbApiInternalLogHandler : public LogHandler {
+  NdbMutex *m_consumer_mutex;
+  NdbMutex *m_handler_mutex;
+  LogHandler *m_defaultHandler;
+  NdbApiLogConsumer *m_userConsumer;
+
+ public:
+  /**
+   * Method to [create and] return the
+   * NdbApiInternalLogHandler instance
+   */
+  static NdbApiInternalLogHandler *getLogHandlerInstance() {
+    // assert g_ndb_connection_mutex is held
+    if (g_api_internal_log_handler == nullptr) {
+      /* None defined, create it and add to the g_eventLogger*/
+      LogHandler *clh = new ConsoleLogHandler();
+      NdbApiInternalLogHandler *nilh = new NdbApiInternalLogHandler(clh);
+      g_eventLogger->addHandler(nilh);
+      g_api_internal_log_handler = nilh;
+    }
+    return g_api_internal_log_handler;
+  }
+
+ private:
+  /* Constructor private to enforce singleton status */
+  NdbApiInternalLogHandler(LogHandler *defaultHandler)
+      : m_defaultHandler(defaultHandler), m_userConsumer(nullptr) {
+    m_consumer_mutex = NdbMutex_Create();
+    m_handler_mutex = NdbMutex_Create();
+    Logger::LoggerTest::setHandlerPointerAdress(*g_eventLogger,
+                                                &m_defaultHandler);
+  }
+
+ public:
+  ~NdbApiInternalLogHandler() override {
+    delete m_defaultHandler;
+    NdbMutex_Destroy(m_consumer_mutex);
+    NdbMutex_Destroy(m_handler_mutex);
+    /* Take out singleton reference */
+    g_api_internal_log_handler = nullptr;
+  }
+
+  virtual void append(const char *pCategory, Logger::LoggerLevel level,
+                      const char *pMsg, time_t now) override {
+    {
+      if (m_userConsumer) {
+        Guard g(m_consumer_mutex);
+        /* Pass to user's consumer object */
+        m_userConsumer->log((NdbApiLogConsumer::LogLevel)level, pCategory,
+                            pMsg);
+      } else {
+        Guard g(m_handler_mutex);
+        /* Pass to default log handler */
+        m_defaultHandler->append(pCategory, level, pMsg, now);
+      }
+    }
+  }
+
+  void setUserConsumer(NdbApiLogConsumer *userConsumer) {
+    Guard g(m_consumer_mutex);
+    m_userConsumer = userConsumer;
+  }
+
+  void setDefaultLogHandler(LogHandler *logHandler) {
+    Guard g(m_handler_mutex);
+    delete m_defaultHandler;
+    m_defaultHandler = logHandler;
+  }
+
+  bool open() override { return true; }
+  bool close() override { return true; }
+  bool is_open() override { return true; }
+  bool setParam(const BaseString & /*param*/,
+                const BaseString & /*value*/) override {
+    return true;
+  }
+  bool checkParams() override { return true; }
+  void writeHeader(const char *, Logger::LoggerLevel, time_t) override {
+    return;
+  }
+  void writeMessage(const char *) override { return; }
+  void writeFooter() override { return; }
+  void setRepeatFrequency(unsigned val) override {
+    m_defaultHandler->setRepeatFrequency(val);
+  }
+};
+
 /*
  * Ndb_cluster_connection_impl
  */
@@ -378,13 +488,14 @@ Ndb_cluster_connection_impl::Ndb_cluster_connection_impl(
     int force_api_nodeid)
     : Ndb_cluster_connection(*this),
       m_main_connection(main_connection),
-      m_optimized_node_selection(1),
+      m_conn_default_optimized_node_selection(1),
       m_run_connect_thread(0),
       m_latest_trans_gci(0),
       m_first_ndb_object(nullptr),
       m_latest_error_msg(),
       m_latest_error(0),
       m_data_node_neighbour(0),
+      m_num_created_ndb_objects(0),
       m_multi_wait_group(nullptr),
       m_uri_scheme(nullptr),
       m_uri_host(nullptr),
@@ -396,10 +507,12 @@ Ndb_cluster_connection_impl::Ndb_cluster_connection_impl(
   NdbMutex_Lock(g_ndb_connection_mutex);
   if (g_ndb_connection_count++ == 0) {
     NdbColumnImpl::create_pseudo_columns();
-    g_eventLogger->createConsoleHandler();
+    /* Setup singleton InternalLogHandler if needed */
+    NdbApiInternalLogHandler::getLogHandlerInstance();
     g_eventLogger->setCategory("NdbApi");
     g_eventLogger->enable(Logger::LL_ON, Logger::LL_ERROR);
     g_eventLogger->disable(Logger::LL_DEBUG);
+    g_eventLogger->startAsync();
     /*
       Disable repeated message handling as it interfers
       with mysqld logging, in which case messages come out
@@ -460,8 +573,8 @@ Ndb_cluster_connection_impl::~Ndb_cluster_connection_impl() {
   if (m_first_ndb_object) {
     g_eventLogger->warning(
         "Waiting for Ndb instances belonging to "
-        "Ndb_cluster_connection %p to be deleted...",
-        this);
+        "Ndb_cluster_connection %u (%p) to be deleted...",
+        m_my_node_id, this);
 
     while (m_first_ndb_object) {
       NdbCondition_WaitTimeout(m_new_delete_ndb_cond, m_new_delete_ndb_mutex,
@@ -500,6 +613,7 @@ Ndb_cluster_connection_impl::~Ndb_cluster_connection_impl() {
     NdbMutex_Destroy(ndb_print_state_mutex);
     ndb_print_state_mutex = nullptr;
 #endif
+    g_eventLogger->stopAsync();
   }
   NdbMutex_Unlock(g_ndb_connection_mutex);
 
@@ -507,6 +621,9 @@ Ndb_cluster_connection_impl::~Ndb_cluster_connection_impl() {
     NdbMutex_Destroy(m_nodes_proximity_mutex);
     m_nodes_proximity_mutex = nullptr;
   }
+
+  free(const_cast<char *>(m_tls_search_path));
+  m_tls_search_path = nullptr;
 
   if (m_event_add_drop_mutex) NdbMutex_Destroy(m_event_add_drop_mutex);
   m_event_add_drop_mutex = nullptr;
@@ -541,7 +658,7 @@ const Ndb *Ndb_cluster_connection::get_next_ndb_object(const Ndb *p) {
   return p->theImpl->m_next_ndb_object;
 }
 
-void Ndb_cluster_connection_impl::link_ndb_object(Ndb *p) {
+Uint64 Ndb_cluster_connection_impl::link_ndb_object(Ndb *p) {
   lock_ndb_objects();
   if (m_first_ndb_object != nullptr) {
     m_first_ndb_object->theImpl->m_prev_ndb_object = p;
@@ -550,10 +667,14 @@ void Ndb_cluster_connection_impl::link_ndb_object(Ndb *p) {
   p->theImpl->m_next_ndb_object = m_first_ndb_object;
   m_first_ndb_object = p;
 
+  const Uint64 id = m_num_created_ndb_objects++;
+
   // Wake up anyone waiting for changes to the Ndb instance list
   NdbCondition_Broadcast(m_new_delete_ndb_cond);
 
   unlock_ndb_objects();
+
+  return id;
 }
 
 void Ndb_cluster_connection_impl::unlink_ndb_object(Ndb *p) {
@@ -759,6 +880,19 @@ void Ndb_cluster_connection_impl::set_data_node_neighbour(Uint32 node) {
   NdbMutex_Unlock(m_nodes_proximity_mutex);
 }
 
+void Ndb_cluster_connection_impl::configure_tls(const char *searchPath,
+                                                int mgm_level) {
+  m_tls_search_path = strdup(searchPath);
+
+  m_config_retriever->init_mgm_tls(m_tls_search_path, ::Node::Type::Client,
+                                   mgm_level);
+  m_transporter_facade->api_configure_tls(m_tls_search_path, mgm_level);
+}
+
+const char *Ndb_cluster_connection_impl::get_tls_certificate_path() const {
+  return m_transporter_facade->get_tls_certificate_path();
+}
+
 void Ndb_cluster_connection_impl::set_name(const char *name) {
   NdbMgmHandle h = m_config_retriever->get_mgmHandle();
   ndb_mgm_set_name(h, name);
@@ -800,7 +934,7 @@ int Ndb_cluster_connection_impl::init_nodes_vector(
   ndb_mgm_configuration_iterator iter(config, CFG_SECTION_CONNECTION);
 
   for (iter.first(); iter.valid(); iter.next()) {
-    Uint32 nodeid1, nodeid2, remoteNodeId, group = 5;
+    Uint32 nodeid1, nodeid2, tlsReq, remoteNodeId, group = 5;
     const char *remoteHostName = nullptr;
     if (iter.get(CFG_CONNECTION_NODE_1, &nodeid1)) continue;
     if (iter.get(CFG_CONNECTION_NODE_2, &nodeid2)) continue;
@@ -834,6 +968,11 @@ int Ndb_cluster_connection_impl::init_nodes_vector(
          * decrease it by 1.
          */
       case CONNECTION_TYPE_TCP: {
+        // check for TLS requirement
+        tlsReq = 0;
+        iter.get(CFG_TCP_REQUIRE_TLS, &tlsReq);
+        if (tlsReq) m_tls_requirement = true;
+
         // connecting through localhost
         // check if config_hostname is local
         // check if in same location domain
@@ -1151,6 +1290,15 @@ void Ndb_cluster_connection_impl::do_test() {
   delete[] nodes;
 }
 
+void Ndb_cluster_connection::configure_tls(const char *searchPath,
+                                           int mgmTlsLevel) {
+  m_impl.configure_tls(searchPath, mgmTlsLevel);
+}
+
+const char *Ndb_cluster_connection::get_tls_certificate_path() const {
+  return m_impl.get_tls_certificate_path();
+}
+
 void Ndb_cluster_connection::set_data_node_neighbour(Uint32 node) {
   m_impl.set_data_node_neighbour(node);
 }
@@ -1186,7 +1334,7 @@ int Ndb_cluster_connection_impl::connect(int no_retries,
     }
 
     // the allocNodeId function will connect if not connected
-    int alloc_error;
+    int alloc_error = 0;
     Uint32 nodeId = m_config_retriever->allocNodeId(
         no_retries, retry_delay_in_seconds, verbose, alloc_error);
     if (!nodeId) {
@@ -1220,9 +1368,18 @@ int Ndb_cluster_connection_impl::connect(int no_retries,
       DBUG_RETURN(-1);
     }
 
-    if (m_transporter_facade->start_instance(nodeId, config.get()) < 0) {
+    int r_start = m_transporter_facade->start_instance(nodeId, config.get(),
+                                                       m_tls_requirement);
+    if (r_start == -2) {
+      m_latest_error = 2;
+      m_latest_error_msg.assign(
+          "TLS is required but this node does not have a valid certificate");
+    }
+
+    if (r_start < 0) {
       DBUG_RETURN(-1);
     }
+
     // NOTE! The config generation used by this API node could also be sent to
     // the cluster in same way as other properties with setProcessInfoUri()
     m_transporter_facade->theClusterMgr->setProcessInfoUri(
@@ -1241,7 +1398,9 @@ int Ndb_cluster_connection_impl::connect(int no_retries,
   }
   m_latest_error = 1;
   m_latest_error_msg.assfmt("Configuration error: %s", erString);
-  g_eventLogger->info("%s", get_latest_error_msg());
+  if (verbose) {
+    fprintf(stdout, "%s\n", get_latest_error_msg());
+  }
   DBUG_PRINT("exit", ("connect failed, '%s' ret: -1", erString));
   DBUG_RETURN(-1);
 }
@@ -1366,7 +1525,8 @@ Uint32 Ndb_cluster_connection_impl::select_any(NdbImpl *impl_ndb) {
   Uint16 prospective_node_ids[MAX_NDB_NODES];
   Uint32 num_prospective_nodes = 0;
   Uint32 my_location_domain_id = m_my_location_domain_id;
-  if (my_location_domain_id == 0) {
+  if (my_location_domain_id == 0 || !impl_ndb->m_optimized_node_selection) {
+    // No preference among nodes
     return 0;
   }
   for (Uint32 i = 0; i < m_nodes_proximity.size(); i++) {
@@ -1436,10 +1596,16 @@ Uint32 Ndb_cluster_connection_impl::select_node(NdbImpl *impl_ndb,
   Uint32 best_usage = 0;
   Int32 best_score = MAX_PROXIMITY_GROUP;  // Lower is better
 
-  if (!m_impl.m_optimized_node_selection) {
+  if (!impl_ndb->m_optimized_node_selection) {
     /**
      * optimized_node_selection is off.  Use round robin.
      * Uses hint_count in m_nodes_proximity but not the group value.
+     * Algorithm
+     * - Check all supplied candidate nodes
+     *   (those holding replicas of the partition)
+     * - Initially choose the first partition as best
+     * - Choose another partition if it has lower hint usage so that
+     *   requests are balanced across nodes holding partitions.
      */
     for (Uint32 j = 0; j < cnt; j++) {
       Uint32 candidate_node = nodes[j];
@@ -1451,8 +1617,9 @@ Uint32 Ndb_cluster_connection_impl::select_node(NdbImpl *impl_ndb,
         continue;
       }
 
+      /* Check usage of candidate node, choose if it's the lowest so far */
       for (Uint32 i = 0; i < nodes_arr_cnt; i++) {
-        if (nodes_arr[i].id == j) {
+        if (nodes_arr[i].id == candidate_node) {
           Uint32 usage = nodes_arr[i].hint_count;
           if (best_score == MAX_PROXIMITY_GROUP) {
             best_idx = i;
@@ -1471,6 +1638,11 @@ Uint32 Ndb_cluster_connection_impl::select_node(NdbImpl *impl_ndb,
   } else {
     /**
      * optimized_node_selection is on.  Use proximity.
+     * Algorithm :
+     *   Check each candidate node to find the node(s) with closest
+     *     proximity (lowest adjusted_group)
+     *   Within candidates with the same proximity, choose node
+     *     with lowest hint count (load balance)
      */
     for (Uint32 j = 0; j < cnt; j++) {
       Uint32 candidate_node = nodes[j];
@@ -1483,6 +1655,8 @@ Uint32 Ndb_cluster_connection_impl::select_node(NdbImpl *impl_ndb,
       for (Uint32 i = 0; i < nodes_arr_cnt; i++) {
         if (nodes_arr[i].adjusted_group > best_score) {
           // We already got a better match
+          // Further matches can only be the same or worse, stop
+          // search on this candidate.
           break;
         }
         if (nodes_arr[i].id == candidate_node) {
@@ -1578,4 +1752,38 @@ int Ndb_cluster_connection::wait_until_ready(const int *nodes, int cnt,
 
   mask.bitAND(alive);
   DBUG_RETURN(mask.count());
+}
+
+const char *NdbApiLogConsumer::getLogLevelName(NdbApiLogConsumer::LogLevel ll) {
+  switch (ll) {
+    case LL_ON:
+      return "ON";
+    case LL_DEBUG:
+      return "DEBUG";
+    case LL_INFO:
+      return "INFO";
+    case LL_WARNING:
+      return "WARNING";
+    case LL_ERROR:
+      return "ERROR";
+    case LL_CRITICAL:
+      return "CRITICAL";
+    case LL_ALERT:
+      return "ALERT";
+    case LL_ALL:
+      return "ALL";
+    default:
+      return "UNKNOWN";
+  }
+}
+
+void Ndb_cluster_connection::set_log_consumer(NdbApiLogConsumer *log_consumer) {
+  assert(g_ndb_connection_mutex != NULL);  // ndb_init() must have been called
+  NdbMutex_Lock(g_ndb_connection_mutex);
+  {
+    /* Set the consumer on the singleton object */
+    NdbApiInternalLogHandler::getLogHandlerInstance()->setUserConsumer(
+        log_consumer);
+  }
+  NdbMutex_Unlock(g_ndb_connection_mutex);
 }

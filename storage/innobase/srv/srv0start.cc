@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2023, Oracle and/or its affiliates.
+Copyright (c) 1996, 2024, Oracle and/or its affiliates.
 Copyright (c) 2008, Google Inc.
 Copyright (c) 2009, Percona Inc.
 
@@ -21,12 +21,13 @@ This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
 
-This program is also distributed with certain software (including but not
-limited to OpenSSL) that is licensed under separate terms, as designated in a
-particular file or component or in included license documentation. The authors
-of MySQL hereby grant you an additional permission to link the program and
-your derivative works with the separately licensed software that they have
-included with MySQL.
+This program is designed to work with certain software (including
+but not limited to OpenSSL) that is licensed under separate terms,
+as designated in a particular file or component or in included license
+documentation.  The authors of MySQL hereby grant you an additional
+permission to link the program and your derivative works with the
+separately licensed software that they have either included with
+the program or referenced in the documentation.
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -193,6 +194,8 @@ mysql_pfs_key_t srv_worker_thread_key;
 mysql_pfs_key_t trx_recovery_rollback_thread_key;
 mysql_pfs_key_t srv_ts_alter_encrypt_thread_key;
 mysql_pfs_key_t parallel_rseg_init_thread_key;
+mysql_pfs_key_t bulk_flusher_thread_key;
+mysql_pfs_key_t bulk_alloc_thread_key;
 #endif /* UNIV_PFS_THREAD */
 
 #ifdef WITH_WSREP
@@ -363,10 +366,7 @@ static dberr_t srv_undo_tablespace_read_encryption(pfs_os_file_t fh,
   ut_ad(offset);
 
   /* Return if the encryption metadata is empty. */
-  if (!Encryption::is_encrypted_with_v3(first_page + offset) &&
-      !(srv_is_upgrade_mode &&
-        memcmp(first_page + offset, Encryption::KEY_MAGIC_V2,
-               Encryption::MAGIC_SIZE) == 0)) {
+  if (!Encryption::is_encrypted_with_v3(first_page + offset)) {
     ut::aligned_free(first_page);
     return (DB_SUCCESS);
   }
@@ -578,7 +578,7 @@ dberr_t srv_undo_tablespace_open(undo::Tablespace &undo_space) {
   }
 
   /* Check if this file supports atomic write. */
-#if !defined(NO_FALLOCATE) && defined(UNIV_LINUX)
+#ifdef UNIV_LINUX
   if (!dblwr::is_enabled()) {
     atomic_write = fil_fusionio_enable_atomic_write(fh);
   } else {
@@ -586,7 +586,7 @@ dberr_t srv_undo_tablespace_open(undo::Tablespace &undo_space) {
   }
 #else
   atomic_write = false;
-#endif /* !NO_FALLOCATE && UNIV_LINUX */
+#endif /* UNIV_LINUX */
 
   if (space == nullptr) {
     /* Load the tablespace into InnoDB's internal data structures.
@@ -1562,11 +1562,6 @@ static dberr_t recreate_redo_files(lsn_t &flushed_lsn) {
 
   fil_open_system_tablespace_files();
 
-  err = log_start(*log_sys, flushed_lsn, flushed_lsn);
-  if (err != DB_SUCCESS) {
-    return err;
-  }
-
   return DB_SUCCESS;
 }
 
@@ -2133,10 +2128,10 @@ dberr_t srv_start(bool create_new_db) {
       would write new redo records in the current fmt,
       and end up with file in both formats = invalid. */
 
-      err = recv_apply_hashed_log_recs(*log_sys,
-                                       !recv_sys->is_cloned_db && !log_upgrade);
+      recv_apply_hashed_log_recs(*log_sys,
+                                 !recv_sys->is_cloned_db && !log_upgrade);
 
-      if (recv_sys->found_corrupt_log || err != DB_SUCCESS) {
+      if (recv_sys->found_corrupt_log) {
         err = DB_ERROR;
         /* Set the abort flag to true. */
         auto p = recv_recovery_from_checkpoint_finish(true);
@@ -2961,9 +2956,7 @@ static void srv_shutdown_page_cleaners() {
   here to let it complete the flushing of the buffer pools
   before proceeding further. */
 
-  for (uint32_t count = 0; buf_flush_page_cleaner_is_active() ||
-                           buf_flush_active_lru_managers() > 0;
-       ++count) {
+  for (uint32_t count = 0; buf_flush_page_cleaner_is_active(); ++count) {
     if (count >= SHUTDOWN_SLEEP_ROUNDS) {
       ib::info(ER_IB_MSG_1251);
       count = 0;
@@ -2972,8 +2965,6 @@ static void srv_shutdown_page_cleaners() {
     std::this_thread::sleep_for(
         std::chrono::microseconds(SHUTDOWN_SLEEP_TIME_US));
   }
-
-  ut_ad(buf_flush_active_lru_managers() == 0);
 
   ut_ad(buf_pool_pending_io_reads_count() == 0);
   ut_ad(buf_pool_pending_io_writes_count() == 0);
@@ -3220,7 +3211,6 @@ void srv_shutdown() {
 
   dict_close();
   dict_persist_close();
-  btr_search_sys_free();
   undo_spaces_deinit();
   os_aio_free();
   que_close();

@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -106,7 +107,7 @@ int NdbMem_ReserveSpace(void **ptr, size_t len) {
 #ifdef _WIN32
   p = VirtualAlloc(*ptr, len, MEM_RESERVE, PAGE_NOACCESS);
   *ptr = p;
-  return (p == NULL) ? -1 : 0;
+  return (p == nullptr) ? -1 : 0;
 #elif defined(MAP_NORESERVE)
   /*
    * MAP_NORESERVE is essential to not reserve swap space on Solaris.
@@ -170,7 +171,7 @@ int NdbMem_ReserveSpace(void **ptr, size_t len) {
 int NdbMem_PopulateSpace(void *ptr, size_t len) {
 #ifdef _WIN32
   void *p = VirtualAlloc(ptr, len, MEM_COMMIT, PAGE_READWRITE);
-  return (p == NULL) ? -1 : 0;
+  return (p == nullptr) ? -1 : 0;
 #elif defined(MAP_GUARD) /* FreeBSD */
   void *p = mmap(ptr, len, PROT_READ | PROT_WRITE,
                  MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED, -1, 0);

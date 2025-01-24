@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -39,7 +40,7 @@ class NdbRecAttr;
  *
  * Brief description on how to work with events:
  *
- * - An event, represented by an NdbDictionary::Event, i created in the
+ * - An event, represented by an NdbDictionary::Event, is created in the
  *   Database through
  *   NdbDictionary::Dictionary::createEvent() (note that this can be done
  *   by any application or thread and not necessarily by the "listener")
@@ -157,11 +158,11 @@ class NdbEventOperation {
    *                    the attribute, or a NULL pointer
    *                    (indicating error).
    */
-  NdbRecAttr *getValue(const char *anAttrName, char *aValue = 0);
+  NdbRecAttr *getValue(const char *anAttrName, char *aValue = nullptr);
   /**
    * See getValue().
    */
-  NdbRecAttr *getPreValue(const char *anAttrName, char *aValue = 0);
+  NdbRecAttr *getPreValue(const char *anAttrName, char *aValue = nullptr);
 
   /**
    * These methods replace getValue/getPreValue for blobs.  Each
@@ -170,6 +171,18 @@ class NdbEventOperation {
    */
   NdbBlob *getBlobHandle(const char *anAttrName);
   NdbBlob *getPreBlobHandle(const char *anAttrName);
+
+  /**
+    Activate data node filtering of updates that have
+    the no-logging flag set in anyvalue.
+   */
+  void setFilterAnyvalueMySQLNoLogging();
+
+  /**
+    Activate data node filtering of updates applied by a replica, ie where the
+    serverid portion of anyvalue is set.
+   */
+  void setFilterAnyvalueMySQLNoReplicaUpdates();
 
   int isOverrun() const;
 
@@ -301,7 +314,7 @@ class NdbEventOperation {
    * Check whether the consumed event data marks an error epoch
    * and get the error.
    */
-  bool isErrorEpoch(NdbDictionary::Event::TableEvent *error_type = 0);
+  bool isErrorEpoch(NdbDictionary::Event::TableEvent *error_type = nullptr);
 
 #ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
   /** these are subject to change at any time */

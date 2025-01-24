@@ -1,8 +1,0 @@
-# parallel + sockopt
-[xtrabackup]
-parallel=8
-
-[sst]
-streamfmt=xbstream
-transferfmt=socat
-sockopt=,nodelay,rcvbuf=1048576

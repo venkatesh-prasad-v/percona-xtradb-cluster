@@ -1,15 +1,16 @@
-/* Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -488,8 +489,10 @@ DynamicRangeIterator::DynamicRangeIterator(THD *thd, TABLE *table,
 
 DynamicRangeIterator::~DynamicRangeIterator() {
   // This is owned by our MEM_ROOT.
-  destroy(m_qep_tab->range_scan());
-  m_qep_tab->set_range_scan(nullptr);
+  if (m_qep_tab->range_scan() != nullptr) {
+    ::destroy_at(m_qep_tab->range_scan());
+    m_qep_tab->set_range_scan(nullptr);
+  }
 }
 
 bool DynamicRangeIterator::Init() {
@@ -908,11 +911,11 @@ int ZeroRowsAggregatedIterator::Read() {
 TableValueConstructorIterator::TableValueConstructorIterator(
     THD *thd, ha_rows *examined_rows,
     const mem_root_deque<mem_root_deque<Item *> *> &row_value_list,
-    mem_root_deque<Item *> *join_fields)
+    Mem_root_array<Item_values_column *> *output_refs)
     : RowIterator(thd),
       m_examined_rows(examined_rows),
       m_row_value_list(row_value_list),
-      m_output_refs(join_fields) {
+      m_output_refs(output_refs) {
   assert(examined_rows != nullptr);
 }
 
@@ -922,17 +925,15 @@ bool TableValueConstructorIterator::Init() {
 }
 
 int TableValueConstructorIterator::Read() {
-  if (*m_examined_rows == m_row_value_list.size()) return -1;
+  if (m_row_it == m_row_value_list.end()) return -1;
 
   // If the TVC has a single row, we don't create Item_values_column reference
   // objects during resolving. We will instead use the single row directly from
   // Query_block::item_list, such that we don't have to change references here.
-  if (m_row_value_list.size() != 1) {
-    auto output_refs_it = VisibleFields(*m_output_refs).begin();
+  if (m_output_refs != nullptr) {
+    Item_values_column **output_refs_it = m_output_refs->begin();
     for (const Item *value : **m_row_it) {
-      Item_values_column *ref =
-          down_cast<Item_values_column *>(*output_refs_it);
-      ++output_refs_it;
+      Item_values_column *ref = *output_refs_it++;
 
       // Ideally we would not be casting away constness here. However, as the
       // evaluation of Item objects during execution is not const (i.e. none of
@@ -940,9 +941,9 @@ int TableValueConstructorIterator::Read() {
       // Item_values_column object cannot be const.
       ref->set_value(const_cast<Item *>(value));
     }
-    ++m_row_it;
   }
 
+  ++m_row_it;
   ++*m_examined_rows;
   return 0;
 }

@@ -565,10 +565,18 @@ class wsrep_scope_guard {
   std::function<void()> _scope_leave;
 };
 
+
+/**
+ * Should the statement be replicated for the given table.
+ */
+bool wsrep_should_replicate_for_table(Table_ref * table_ref);
+
 /**
  * User/Host components for the PXC internal session user.
  */
 extern LEX_CSTRING PXC_INTERNAL_SESSION_USER;
 extern LEX_CSTRING PXC_INTERNAL_SESSION_HOST;
+
+bool wsrep_keyring_component_loaded();
 
 #endif /* WSREP_MYSQLD_H */

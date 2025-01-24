@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2004, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2004, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -38,6 +39,7 @@
 #define CFG_TOTAL_SEND_BUFFER_MEMORY 9
 #define CFG_LOCATION_DOMAIN_ID 10
 #define CFG_NODE_DEDICATED 11
+#define CFG_NODE_REQUIRE_CERT 12
 
 /**
  * DB config parameters
@@ -267,6 +269,7 @@
 
 #define CFG_DB_TRANS_ERROR_LOGLEVEL 679
 #define CFG_DB_ENCRYPTED_FILE_SYSTEM 680
+#define CFG_DB_REQUIRE_TLS 681
 
 #define CFG_NODE_ARBIT_RANK 200
 #define CFG_NODE_ARBIT_DELAY 201
@@ -295,6 +298,7 @@
 #define CFG_MAX_LOGLEVEL 262
 
 #define CFG_MGM_PORT 300
+#define CFG_MGM_REQUIRE_TLS 301
 
 #define CFG_DB_MAX_BUFFERED_EPOCH_BYTES 350
 
@@ -323,6 +327,7 @@
 #define CFG_TCP_MAXSEG_SIZE 459
 #define CFG_TCP_BIND_INADDR_ANY 460
 #define CFG_TCP_SPINTIME 461
+#define CFG_TCP_REQUIRE_TLS 462
 
 #define CFG_SHM_SEND_SIGNAL_ID 500
 #define CFG_SHM_CHECKSUM 501
@@ -386,5 +391,9 @@
 
 #define OPERATION_REDO_PROBLEM_ACTION_ABORT 0
 #define OPERATION_REDO_PROBLEM_ACTION_QUEUE 1
+
+#define CLIENT_TLS_RELAXED 0
+#define CLIENT_TLS_STRICT 1
+#define CLIENT_TLS_DEFERRED 2
 
 #endif

@@ -1,10 +1,10 @@
---source include/assert_gtid_mode_on.inc
+--source include/rpl/assert_gtid_mode_on.inc
 --source include/have_log_bin.inc
 --source include/count_sessions.inc
 
 # MTR test framework can reuse server instance, so current @@GLOBAL.GTID_EXECUTED may be anything.
 # Reset it to the initial state.
-RESET MASTER;
+RESET BINARY LOGS AND GTIDS;
 
 --let $master_uuid= `SELECT @@GLOBAL.SERVER_UUID`
 

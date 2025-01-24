@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2019, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2019, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -113,7 +114,7 @@ int ndb_file::read_backward(void *buf, ndb_file::size_t count) const {
   BOOL ret;
   LARGE_INTEGER off;
   off.QuadPart = -LONG(count);
-  ret = SetFilePointerEx(m_handle, off, NULL, FILE_CURRENT);
+  ret = SetFilePointerEx(m_handle, off, nullptr, FILE_CURRENT);
   if (!ret) {
     return -1;
   }
@@ -133,7 +134,7 @@ int ndb_file::read_backward(void *buf, ndb_file::size_t count) const {
     return -1;
   }
 
-  ret = SetFilePointerEx(m_handle, off, NULL, FILE_CURRENT);
+  ret = SetFilePointerEx(m_handle, off, nullptr, FILE_CURRENT);
   if (!ret) {
     return -1;
   }
@@ -180,7 +181,7 @@ int ndb_file::set_pos(ndb_off_t pos) const {
   require(check_block_size_and_alignment(nullptr, 0, pos));
   LARGE_INTEGER off;
   off.QuadPart = pos;
-  BOOL ret = SetFilePointerEx(m_handle, off, NULL, FILE_BEGIN);
+  BOOL ret = SetFilePointerEx(m_handle, off, nullptr, FILE_BEGIN);
   if (!ret) {
     return -1;
   }
@@ -278,8 +279,9 @@ int ndb_file::create(const char name[]) {
   DWORD dwShareMode = FILE_SHARE_READ | FILE_SHARE_WRITE;
   DWORD dwFlagsAndAttributes = FILE_ATTRIBUTE_NORMAL;
 
-  HANDLE hFile = CreateFile(name, dwDesiredAccess, dwShareMode, 0,
-                            dwCreationDisposition, dwFlagsAndAttributes, 0);
+  HANDLE hFile =
+      CreateFile(name, dwDesiredAccess, dwShareMode, nullptr,
+                 dwCreationDisposition, dwFlagsAndAttributes, nullptr);
   if (hFile == INVALID_HANDLE_VALUE) {
     return -1;
   }
@@ -334,8 +336,8 @@ int ndb_file::open(const char name[], unsigned flags) {
       return -1;
   }
 
-  m_handle = CreateFile(name, dwDesiredAccess, dwShareMode, 0,
-                        dwCreationDisposition, dwFlagsAndAttributes, 0);
+  m_handle = CreateFile(name, dwDesiredAccess, dwShareMode, nullptr,
+                        dwCreationDisposition, dwFlagsAndAttributes, nullptr);
   if (m_handle == INVALID_HANDLE_VALUE) {
     return -1;
   }
@@ -354,7 +356,7 @@ void ndb_file::invalidate() {
   m_handle = INVALID_HANDLE_VALUE;
 }
 
-bool ndb_file::have_direct_io_support() const { return false; }
+bool ndb_file::have_direct_io_support() { return false; }
 
 bool ndb_file::avoid_direct_io_on_append() const { return false; }
 

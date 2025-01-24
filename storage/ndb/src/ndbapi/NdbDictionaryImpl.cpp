@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -52,7 +53,7 @@
 #include <signaldata/SumaImpl.hpp>
 #include <signaldata/WaitGCP.hpp>
 #include "API.hpp"
-#include "m_ctype.h"
+#include "mysql/strings/m_ctype.h"
 
 #define INCOMPATIBLE_VERSION -2
 
@@ -2402,10 +2403,10 @@ NdbTableImpl *NdbDictionaryImpl::getBlobTable(uint tab_id, uint col_no) {
   DBUG_PRINT("enter", ("tab_id: %u col_no %u", tab_id, col_no));
 
   NdbTableImpl *tab = m_receiver.getTable(tab_id);
-  if (tab == nullptr) DBUG_RETURN(NULL);
+  if (tab == nullptr) DBUG_RETURN(nullptr);
   Ndb_local_table_info *info = get_local_table_info(tab->m_internalName);
   delete tab;
-  if (info == nullptr) DBUG_RETURN(NULL);
+  if (info == nullptr) DBUG_RETURN(nullptr);
   NdbTableImpl *bt = getBlobTable(*info->m_table_impl, col_no);
   DBUG_RETURN(bt);
 }
@@ -2616,7 +2617,9 @@ int NdbDictInterface::dictSignal(NdbApiSignal *sig, LinearSectionPtr ptr[3],
     if (i > 0) {
       Uint32 t = sleep + 10 * (rand() % mod);
 #ifdef VM_TRACE
-      g_eventLogger->info("retry sleep %ums on error %u", t, m_error.code);
+      g_eventLogger->info(
+          "NdbDictionary::dictSignal() : retry sleep %ums on error %u", t,
+          m_error.code);
 #endif
       NdbSleep_MilliSleep(t);
     }
@@ -5158,8 +5161,6 @@ int NdbDictionaryImpl::createEvent(NdbEventImpl &evnt) {
     if (col_impl) {
       evnt.m_facade->addColumn(*(col_impl->m_facade));
     } else {
-      g_eventLogger->info("Attr id %u in table %s not found", evnt.m_attrIds[i],
-                          evnt.getTableName());
       m_error.code = 4713;
       ERR_RETURN(getNdbError(), -1);
     }
@@ -5361,7 +5362,6 @@ int NdbDictInterface::createEvent(NdbEventImpl &evnt, int getFlag) {
         evnt.m_tableImpl->m_version != evntConf->getTableVersion() ||
         // evnt.m_attrListBitmask != evntConf->getAttrListBitmask() ||
         evnt.mi_type != evntConf->getEventType()) {
-      g_eventLogger->info("ERROR*************");
       m_buffer.clear();
       m_tableData.clear();
       ERR_RETURN(getNdbError(), 1);
@@ -5393,11 +5393,12 @@ int NdbDictInterface::executeSubscribeEvent(NdbEventOperationImpl &ev_op) {
   req->part = SubscriptionData::TableData;
   req->subscriberData = ev_op.m_oid;
   req->subscriberRef = m_reference;
+  req->requestInfo = ev_op.m_requestInfo;
 
-  DBUG_PRINT("info",
-             ("GSN_SUB_START_REQ subscriptionId=%d,subscriptionKey=%d,"
-              "subscriberData=%d",
-              req->subscriptionId, req->subscriptionKey, req->subscriberData));
+  DBUG_PRINT("info", ("GSN_SUB_START_REQ subscriptionId=%d,subscriptionKey=%d,"
+                      "subscriberData=%d requestInfo=%x",
+                      req->subscriptionId, req->subscriptionKey,
+                      req->subscriberData, req->requestInfo));
 
   int errCodes[] = {SubStartRef::Busy, SubStartRef::BusyWithNR,
                     SubStartRef::NotMaster, 0};
@@ -5457,14 +5458,14 @@ NdbEventImpl *NdbDictionaryImpl::getEvent(const char *eventName,
 
   std::unique_ptr<NdbEventImpl> ev = std::make_unique<NdbEventImpl>();
   if (ev == nullptr) {
-    DBUG_RETURN(NULL);
+    DBUG_RETURN(nullptr);
   }
 
   ev->setName(eventName);
 
   const int ret = m_receiver.createEvent(*ev, 1 /* getFlag set */);
   if (ret) {
-    DBUG_RETURN(NULL);
+    DBUG_RETURN(nullptr);
   }
 
   // We only have the table name with internal name
@@ -5473,7 +5474,7 @@ NdbEventImpl *NdbDictionaryImpl::getEvent(const char *eventName,
     tab = fetchGlobalTableImplRef(InitTable(ev->getTableName()));
     if (tab == nullptr) {
       DBUG_PRINT("error", ("unable to find table %s", ev->getTableName()));
-      DBUG_RETURN(NULL);
+      DBUG_RETURN(nullptr);
     }
     if ((tab->m_status != NdbDictionary::Object::Retrieved) ||
         ((Uint32)tab->m_id != ev->m_table_id) ||
@@ -5488,7 +5489,7 @@ NdbEventImpl *NdbDictionaryImpl::getEvent(const char *eventName,
       tab = fetchGlobalTableImplRef(InitTable(ev->getTableName()));
       if (tab == nullptr) {
         DBUG_PRINT("error", ("unable to find table %s", ev->getTableName()));
-        DBUG_RETURN(NULL);
+        DBUG_RETURN(nullptr);
       }
     }
     ev->setTable(tab);
@@ -5511,13 +5512,13 @@ NdbEventImpl *NdbDictionaryImpl::getEvent(const char *eventName,
       table_version_major(table.m_version) !=
           table_version_major(ev->m_table_version)) {
     m_error.code = 241;
-    DBUG_RETURN(NULL);
+    DBUG_RETURN(nullptr);
   }
 
   if (attributeList_sz > (uint)table.getNoOfColumns()) {
     m_error.code = 241;
     DBUG_PRINT("error", ("Invalid version, too many columns"));
-    DBUG_RETURN(NULL);
+    DBUG_RETURN(nullptr);
   }
 
   assert((int)attributeList_sz <= table.getNoOfColumns());
@@ -5525,7 +5526,7 @@ NdbEventImpl *NdbDictionaryImpl::getEvent(const char *eventName,
     if (id >= (uint)table.getNoOfColumns()) {
       m_error.code = 241;
       DBUG_PRINT("error", ("Invalid version, column %d out of range", id));
-      DBUG_RETURN(NULL);
+      DBUG_RETURN(nullptr);
     }
     if (!mask.get(id)) continue;
 
@@ -5586,7 +5587,7 @@ NdbEventImpl *NdbDictionaryImpl::getEvent(const char *eventName,
             m_error.code = 241; /* Invalid schema object version */
           }
 
-          DBUG_RETURN(NULL);
+          DBUG_RETURN(nullptr);
         }
         /* Blob event does not exist, ok */
       }
@@ -5604,7 +5605,7 @@ NdbEventImpl *NdbDictionaryImpl::getEvent(const char *eventName,
                          "present Expect : %d Actual : %d",
                          blob_count, blob_event_count));
     m_error.code = 241; /* Invalid schema object version */
-    DBUG_RETURN(NULL);
+    DBUG_RETURN(nullptr);
   }
 
   // Return the successfully created event
@@ -5911,9 +5912,6 @@ static int scanEventTable(Ndb *pNdb, const NdbDictionary::Table *pTab,
 
     if (retryAttempt) {
       if (retryAttempt >= retryMax) {
-        g_eventLogger->info(
-            "ERROR: has retried this operation %d times, failing!",
-            retryAttempt);
         goto error;
       }
       if (pTrans) pNdb->closeTransaction(pTrans);
@@ -6329,6 +6327,7 @@ int NdbDictInterface::unpackOldListTables(NdbDictionary::Dictionary::List &list,
       }
       memcpy(otherName, &data[pos], n << 2);
       if (!(objectName = BaseString(otherName))) {
+        delete[] otherName;
         m_error.code = 4000;
         return -1;
       }

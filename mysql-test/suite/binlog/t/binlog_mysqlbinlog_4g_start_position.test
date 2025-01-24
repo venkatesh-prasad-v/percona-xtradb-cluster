@@ -33,7 +33,8 @@
 ###############################################################################
 
 # Bug #34847851	
---source include/not_windows.inc 
+--source include/not_windows.inc
+--source include/not_asan.inc
 --source include/big_test.inc
 --source include/have_binlog_format_row.inc
 
@@ -56,7 +57,7 @@ FLUSH LOGS;
 --echo #
 --echo # 4) Get the filename of the binary log.
 --echo #
---source include/save_binlog_position.inc
+--source include/rpl/save_binlog_file_position.inc
 
 --echo #
 --echo # 5) Run a query to get events in mysqlbinlog greater than 4GB.

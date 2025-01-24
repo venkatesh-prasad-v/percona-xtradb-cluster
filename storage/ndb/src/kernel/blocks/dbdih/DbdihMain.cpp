@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -1507,10 +1508,32 @@ void Dbdih::execREAD_CONFIG_REQ(Signal *signal) {
   ndb_mgm_get_int_parameter(p, CFG_DB_AUTO_THREAD_CONFIG,
                             &use_auto_thread_config);
 
+  /**
+   * Ignore AutomaticThreadConfig configuration for single threaded data
+   * node (ndbd).
+   */
+  if (use_auto_thread_config && !globalData.isNdbMt) {
+    jam();
+    use_auto_thread_config = 0;
+  }
+
   Uint32 use_classic_fragmentation = 1;
   ndb_mgm_get_int_parameter(p, CFG_DB_CLASSIC_FRAGMENTATION,
                             &use_classic_fragmentation);
   m_use_classic_fragmentation = use_classic_fragmentation;
+
+  /**
+   * Ignore ClassicFragmentation configuration for single threaded data
+   * node (ndbd).
+   */
+  if (!m_use_classic_fragmentation && !globalData.isNdbMt) {
+    jam();
+    m_use_classic_fragmentation = 1;
+    g_eventLogger->info(
+        "ClassicFragmentation configuration ignored, "
+        "ndbd does not support non classic fragmentation");
+  }
+
   if (m_use_classic_fragmentation && use_auto_thread_config) {
     jam();
     m_use_classic_fragmentation = 0;
@@ -1518,6 +1541,7 @@ void Dbdih::execREAD_CONFIG_REQ(Signal *signal) {
 
   c_fragments_per_node_ = 0;
   if (!m_use_classic_fragmentation) {
+    ndbrequire(globalData.isNdbMt);
     jam();
     c_fragments_per_node_ = 2;
     ndb_mgm_get_int_parameter(p, CFG_DB_PARTITIONS_PER_NODE,
@@ -22958,7 +22982,7 @@ void Dbdih::initRestorableGciFiles() {
   filePtr.p->fileName[0] = (Uint32)-1; /* T DIRECTORY NOT USED  */
   filePtr.p->fileName[1] = (Uint32)-1; /* F DIRECTORY NOT USED  */
   filePtr.p->fileName[2] = (Uint32)-1; /* S PART IGNORED        */
-  tirgTmp = 1;                         /* FILE NAME VERSION 1   */
+  tirgTmp = FsOpenReq::V_BLOCK;        /* FILE NAME VERSION 1   */
   tirgTmp = (tirgTmp << 8) + 6;        /* .SYSFILE              */
   tirgTmp = (tirgTmp << 8) + 1;        /* D1 DIRECTORY          */
   tirgTmp = (tirgTmp << 8) + 0;        /* P0 FILE NAME          */
@@ -22975,7 +22999,7 @@ void Dbdih::initRestorableGciFiles() {
   filePtr.p->fileName[0] = (Uint32)-1; /* T DIRECTORY NOT USED  */
   filePtr.p->fileName[1] = (Uint32)-1; /* F DIRECTORY NOT USED  */
   filePtr.p->fileName[2] = (Uint32)-1; /* S PART IGNORED        */
-  tirgTmp = 1;                         /* FILE NAME VERSION 1   */
+  tirgTmp = FsOpenReq::V_BLOCK;        /* FILE NAME VERSION 1   */
   tirgTmp = (tirgTmp << 8) + 6;        /* .SYSFILE              */
   tirgTmp = (tirgTmp << 8) + 2;        /* D1 DIRECTORY          */
   tirgTmp = (tirgTmp << 8) + 0;        /* P0 FILE NAME          */
@@ -23040,7 +23064,7 @@ void Dbdih::initTableFile(TabRecordPtr tabPtr) {
   filePtr.p->fileName[0] = (Uint32)-1; /* T DIRECTORY NOT USED  */
   filePtr.p->fileName[1] = (Uint32)-1; /* F DIRECTORY NOT USED  */
   filePtr.p->fileName[2] = tabPtr.i;   /* Stid FILE NAME        */
-  titfTmp = 1;                         /* FILE NAME VERSION 1   */
+  titfTmp = FsOpenReq::V_BLOCK;        /* FILE NAME VERSION 1   */
   titfTmp = (titfTmp << 8) + 3;        /* .FRAGLIST             */
   titfTmp = (titfTmp << 8) + 1;        /* D1 DIRECTORY          */
   titfTmp = (titfTmp << 8) + 255;      /* P PART IGNORED        */
@@ -23057,7 +23081,7 @@ void Dbdih::initTableFile(TabRecordPtr tabPtr) {
   filePtr.p->fileName[0] = (Uint32)-1; /* T DIRECTORY NOT USED  */
   filePtr.p->fileName[1] = (Uint32)-1; /* F DIRECTORY NOT USED  */
   filePtr.p->fileName[2] = tabPtr.i;   /* Stid FILE NAME        */
-  titfTmp = 1;                         /* FILE NAME VERSION 1   */
+  titfTmp = FsOpenReq::V_BLOCK;        /* FILE NAME VERSION 1   */
   titfTmp = (titfTmp << 8) + 3;        /* .FRAGLIST             */
   titfTmp = (titfTmp << 8) + 2;        /* D2 DIRECTORY          */
   titfTmp = (titfTmp << 8) + 255;      /* P PART IGNORED        */
@@ -25898,11 +25922,7 @@ void Dbdih::execNDB_TAMPER(Signal *signal) {
     calculateKeepGciLab(signal, 0, 0);
     return;
   }  // if
-  if (signal->getLength() == 1) {
-    SET_ERROR_INSERT_VALUE2(signal->theData[0], 0);
-  } else {
-    SET_ERROR_INSERT_VALUE2(signal->theData[0], signal->theData[1]);
-  }
+  SimulatedBlock::execNDB_TAMPER(signal);
   return;
 }  // Dbdih::execNDB_TAMPER()
 

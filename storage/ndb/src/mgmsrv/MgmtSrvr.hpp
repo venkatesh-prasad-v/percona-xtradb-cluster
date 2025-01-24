@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2003, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -24,6 +25,8 @@
 
 #ifndef MgmtSrvr_H
 #define MgmtSrvr_H
+
+#include <atomic>
 
 #include "Config.hpp"
 #include "ConfigSubscriber.hpp"
@@ -87,6 +90,8 @@ class MgmtSrvr : private ConfigSubscriber, public trp_client {
    */
   enum LogMode { In, Out, InOut, Off };
 
+  enum TlsStats { accepted, upgraded, current, tls, authfail };
+
   /**
      @struct MgmtOpts
      @brief Options used to control how the management server is started
@@ -105,10 +110,14 @@ class MgmtSrvr : private ConfigSubscriber, public trp_client {
     int print_full_config;
     const char *configdir;
     int verbose;
-    MgmtOpts() : configdir(MYSQLCLUSTERDIR) {}
     int reload;
     int initial;
     NodeBitmask nowait_nodes;
+    const char *tls_search_path;
+    int mgm_tls;
+
+    MgmtOpts()
+        : configdir(MYSQLCLUSTERDIR), tls_search_path(NDB_TLS_SEARCH_PATH) {}
   };
 
   MgmtSrvr();                  // Not implemented
@@ -136,6 +145,7 @@ class MgmtSrvr : private ConfigSubscriber, public trp_client {
  private:
   /* Functions used from 'start' */
   bool start_transporter(const Config *);
+  bool get_connection_config(const Config *);
   bool start_mgm_service(const Config *);
   bool connect_to_self(void);
 
@@ -299,17 +309,13 @@ class MgmtSrvr : private ConfigSubscriber, public trp_client {
    */
   const char *getErrorText(int errorCode, char *buf, int buf_sz);
 
+  void tls_stat_increment(unsigned int idx);
+  void tls_stat_decrement(unsigned int idx);
+
  private:
   void config_changed(NodeId, const Config *) override;
   void setClusterLog(const Config *conf);
   void configure_eventlogger(const BaseString &logdestination) const;
-  /**
-   * Make cluster logging asynchronous/synchronous
-   * when g_eventLogger is set up the next time.
-   * @param async_cluster_logging true for async logging,
-   * false for sync logging
-   */
-  void set_async_cluster_logging(bool async_cluster_logging);
 
  public:
   /**
@@ -400,6 +406,16 @@ class MgmtSrvr : private ConfigSubscriber, public trp_client {
 
   class ConfigManager *m_config_manager;
 
+  const char *m_tls_search_path{nullptr};
+
+  int m_client_tls_req;       // TLS requirement level as MGM client ...
+  bool m_require_tls{false};  // ... and as MGM server.
+  bool m_require_cert{false};
+
+  struct ssl_ctx_st *ssl_ctx() {
+    return theFacade->get_registry()->getTlsKeyManager()->ctx();
+  }
+
   bool m_need_restart;
 
   ndb_sockaddr m_connect_address[MAX_NODES];
@@ -463,6 +479,9 @@ class MgmtSrvr : private ConfigSubscriber, public trp_client {
 
   void show_variables(NdbOut &out = ndbout);
 
+  bool require_tls() const { return m_require_tls; }
+  bool require_cert() const { return m_require_tls || m_require_cert; }
+
  private:
   class NodeIdReservations {
     struct Reservation {
@@ -500,18 +519,19 @@ class MgmtSrvr : private ConfigSubscriber, public trp_client {
     unsigned nodeid;
     BaseString hostname;
   };
-  bool build_node_list_from_config(NodeId node_id, ndb_mgm_node_type type,
-                                   Vector<ConfigNode> &config_nodes,
-                                   int &error_code,
-                                   BaseString &error_string) const;
-  int find_node_type(NodeId nodeid, ndb_mgm_node_type type,
-                     const ndb_sockaddr *client_addr,
-                     const Vector<ConfigNode> &config_nodes,
-                     Vector<PossibleNode> &nodes, int &error_code,
-                     BaseString &error_string);
+  bool build_node_type_list_from_config(NodeId node_id, ndb_mgm_node_type type,
+                                        Vector<ConfigNode> &config_nodes,
+                                        int &error_code,
+                                        BaseString &error_string) const;
+  void match_client_addr_to_config_nodes(NodeId nodeid, ndb_mgm_node_type type,
+                                         const ndb_sockaddr *client_addr,
+                                         const Vector<ConfigNode> &config_nodes,
+                                         Vector<PossibleNode> &nodes);
   bool alloc_node_id_impl(NodeId &nodeid, ndb_mgm_node_type type,
                           const ndb_sockaddr *client_addr, int &error_code,
                           BaseString &error_string, Uint32 timeout_s = 20);
+
+  std::atomic<uint32_t> m_tls_stats[5]{0};
 
  public:
   /*
@@ -538,7 +558,6 @@ class MgmtSrvr : private ConfigSubscriber, public trp_client {
 
  private:
   BaseString m_version_string;
-  bool m_async_cluster_logging;
 
  public:
   const char *get_version_string(void) const {

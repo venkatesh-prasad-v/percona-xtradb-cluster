@@ -1,16 +1,17 @@
 /*
-   Copyright (c) 2004, 2023, Oracle and/or its affiliates.
+   Copyright (c) 2004, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -132,6 +133,8 @@ class Ndb_cluster_connection_impl : public Ndb_cluster_connection {
   int configure(Uint32 nodeid, const ndb_mgm_configuration *config);
   void connect_thread();
   void set_name(const char *name);
+  void configure_tls(const char *search_path, int mgm_tls_level);
+  const char *get_tls_certificate_path() const;
   int set_service_uri(const char *, const char *, int, const char *);
   void set_data_node_neighbour(Uint32 neighbour_node);
   void adjust_node_proximity(Uint32 node_id, Int32 adjustment);
@@ -163,7 +166,7 @@ class Ndb_cluster_connection_impl : public Ndb_cluster_connection {
   NdbThread *m_connect_thread;
   int (*m_connect_callback)(void);
 
-  int m_optimized_node_selection;
+  int m_conn_default_optimized_node_selection;
   int m_run_connect_thread;
   NdbMutex *m_event_add_drop_mutex;
   Uint64 m_latest_trans_gci;
@@ -171,7 +174,7 @@ class Ndb_cluster_connection_impl : public Ndb_cluster_connection {
   NdbMutex *m_new_delete_ndb_mutex;
   NdbCondition *m_new_delete_ndb_cond;
   Ndb *m_first_ndb_object;
-  void link_ndb_object(Ndb *);
+  Uint64 link_ndb_object(Ndb *);
   void unlink_ndb_object(Ndb *);
 
   BaseString m_latest_error_msg;
@@ -188,6 +191,9 @@ class Ndb_cluster_connection_impl : public Ndb_cluster_connection {
   // Closest data node neighbour
   Uint32 m_data_node_neighbour;
 
+  // Number of Ndb object creations
+  Uint64 m_num_created_ndb_objects;
+
   // Base offset for stats, from Ndb objects that are no
   // longer with us
   Uint64 globalApiStatsBaseline[Ndb::NumClientStatistics];
@@ -203,6 +209,12 @@ class Ndb_cluster_connection_impl : public Ndb_cluster_connection {
 
   // Config generation of used configuration
   Uint32 m_config_generation{0};
+
+  // TLS Certificate Search Path
+  const char *m_tls_search_path{nullptr};
+
+  // Some connection requires TLS
+  bool m_tls_requirement{false};
 };
 
 #endif

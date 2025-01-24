@@ -1,15 +1,16 @@
-/* Copyright (c) 2007, 2023, Oracle and/or its affiliates.
+/* Copyright (c) 2007, 2024, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
 
-   This program is also distributed with certain software (including
+   This program is designed to work with certain software (including
    but not limited to OpenSSL) that is licensed under separate terms,
    as designated in a particular file or component or in included license
    documentation.  The authors of MySQL hereby grant you an additional
    permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
+   separately licensed software that they have either included with
+   the program or referenced in the documentation.
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -43,7 +44,6 @@
 #include <algorithm>
 
 #include "decimal.h"
-#include "m_ctype.h"
 #include "m_string.h"
 #include "my_base.h"
 #include "my_compiler.h"
@@ -51,9 +51,11 @@
 #include "my_sqlcommand.h"
 #include "my_sys.h"
 #include "my_systime.h"
+#include "mysql/strings/m_ctype.h"
+#include "nulls.h"
+#include "sql-common/my_decimal.h"
 #include "sql/field.h"
 #include "sql/item.h"
-#include "sql/my_decimal.h"
 #include "sql/protocol.h"
 #include "sql/psi_memory_key.h"
 #include "sql/query_options.h"
@@ -177,14 +179,13 @@ static unsigned jemalloc_profile_counter = 0;
   Wrapper over jemalloc mallctl
 
   @param  name      The period-separated name argument specifies a location in a
-  tree-structured namespace
+                    tree-structured namespace
   @param  oldp      To read a value, pass a pointer via oldp to adequate space
-  to contain the value, and a pointer to its length via oldlenp; otherwise pass
-  nullptr and nullptr.
-  @param  oldlenp
-  @param  newp      To write a value, pass a pointer to the value via newp, and
-  its length via newlen; otherwise pass nullptr and 0.
-  @param  newlen
+                    to contain the value; otherwise pass nullptr.
+  @param  oldlenp   A pointer to oldp allocated memory size or nullptr if empty.
+  @param  newp      To write a value, pass a pointer to the value via newp;
+                    otherwise pass nullptr.
+  @param  newlen    Size of the memory allocated to newp or 0.
 
   @return Result of mallctl, mallctl returns 0 on success, or 1 if mallctl is
   not available.

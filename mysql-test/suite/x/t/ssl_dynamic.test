@@ -2,6 +2,12 @@
 --source include/xplugin_preamble.inc
 --source include/xplugin_create_user.inc
 
+call mtr.add_suppression("CA certificate/certficates is invalid. Please check logs for more details.");
+call mtr.add_suppression("Failed to validate certificate .*");
+call mtr.add_suppression("Server certificate .* verification has failed. Check logs for more details");
+call mtr.add_suppression("Failed to set up TLS. Check logs for details");
+call mtr.add_suppression("Internal TLS error error.*");
+
 ## Test starts here
 
 --let $xtest_file= $MYSQL_TMP_DIR/connection_auth_plugin.tmp
@@ -18,7 +24,7 @@ CREATE USER xuser_sha256@localhost
 GRANT ALL ON *.* TO xuser_sha256@localhost;
 
 --let $XBASIC= --file=$xtest_file 2>&1
---let $XSSLPARAM= --ssl-cipher='DHE-RSA-AES256-SHA' $XBASIC
+--let $XSSLPARAM= --ssl-cipher='ECDHE-RSA-AES256-GCM-SHA384' $XBASIC
 
 # The SSL library may fail initializing during this one
 call mtr.add_suppression("Failed to set up SSL because of the following SSL library error");
