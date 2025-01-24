@@ -619,7 +619,7 @@ build_srpm(){
         -e "s:percona-xtradb-cluster-server =:percona-xtradb-cluster-server-pro =:g" \
         -e "s:percona-xtradb-cluster-server --:percona-xtradb-cluster-server-pro --:g" \
         -e "s:percona-xtradb-cluster-client$:percona-xtradb-cluster-client-pro:g" \
-        -e "s:percona-xtradb-cluster-client =:percona-xtradb-cluster-client-pro =:g" \
+        -e "s:percona-xtradb-cluster-client :percona-xtradb-cluster-client-pro :g" \
         -e "s:percona-xtradb-cluster-devel$:percona-xtradb-cluster-devel-pro:g" \
         -e "s:percona-xtradb-cluster-devel =:percona-xtradb-cluster-devel-pro =:g" \
         -e "s:percona-xtradb-cluster-test$:percona-xtradb-cluster-test-pro:g" \
