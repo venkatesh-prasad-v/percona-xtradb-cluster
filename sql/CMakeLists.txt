@@ -1137,6 +1137,7 @@ SET (RPL_REPLICA_SRCS
   rpl_trx_boundary_parser.cc
   udf_service_impl.cc
   udf_service_util.cc
+  wsrep_async_monitor.cc
   )
 ADD_LIBRARY(rpl_replica STATIC ${RPL_REPLICA_SRCS})
 ADD_DEPENDENCIES(rpl_replica GenError)
