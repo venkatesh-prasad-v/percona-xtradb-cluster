@@ -587,7 +587,7 @@ build_srpm(){
         -e "s:percona-xtradb-cluster-server =:percona-xtradb-cluster-server-pro =:g" \
         -e "s:percona-xtradb-cluster-server --:percona-xtradb-cluster-server-pro --:g" \
         -e "s:percona-xtradb-cluster-client$:percona-xtradb-cluster-client-pro:g" \
-        -e "s:percona-xtradb-cluster-client =:percona-xtradb-cluster-client-pro =:g" \
+        -e "s:percona-xtradb-cluster-client :percona-xtradb-cluster-client-pro :g" \
         -e "s:percona-xtradb-cluster-devel$:percona-xtradb-cluster-devel-pro:g" \
         -e "s:percona-xtradb-cluster-devel =:percona-xtradb-cluster-devel-pro =:g" \
         -e "s:percona-xtradb-cluster-test$:percona-xtradb-cluster-test-pro:g" \
@@ -880,6 +880,11 @@ build_source_deb(){
         sed -i "s:Package\: percona-xtradb-cluster-full:Package\: percona-xtradb-cluster-pro-full:g" debian/control
         sed -i "s:Replaces\: percona-xtradb-cluster-pro-full:Replaces\: percona-xtradb-cluster-full:g" debian/control
         sed -i "s:Conflicts\: percona-xtradb-cluster-pro-full:Conflicts\: percona-xtradb-cluster-full:g" debian/control
+        sed -i "s:percona-xtradb-cluster-test (:percona-xtradb-cluster-test-pro (:g" debian/control
+        sed -i "s:percona-xtradb-cluster-dbg (:percona-xtradb-cluster-pro-dbg (:g" debian/control
+        sed -i "s:percona-xtradb-cluster-server-debug,:percona-xtradb-cluster-server-pro-debug,:g" debian/control
+        sed -i "s:percona-xtradb-cluster-garbd (:percona-xtradb-cluster-garbd-pro (:g" debian/control
+        sed -i "s:percona-xtradb-cluster-garbd-debug (:percona-xtradb-cluster-garbd-pro-debug (:g" debian/control
 
         sed -i "s:Package\: percona-xtradb-cluster-test:Package\: percona-xtradb-cluster-test-pro:g" debian/control
         sed -i "s:Replaces\: percona-xtradb-cluster-test-pro:Replaces\: percona-xtradb-cluster-test:g" debian/control
@@ -894,10 +899,10 @@ build_source_deb(){
         sed -i "s:Conflicts\: percona-xtradb-cluster-pro-source:Conflicts\: percona-xtradb-cluster-source:g" debian/control
 
         sed -i "s:Package\: percona-xtradb-cluster-garbd:Package\: percona-xtradb-cluster-garbd-pro:g" debian/control
-        sed -i "s:, percona-xtradb-cluster-garbd-pro:, percona-xtradb-cluster-garbd:g" debian/control
+        sed -i "s:, percona-xtradb-cluster-garbd-pro$:, percona-xtradb-cluster-garbd:g" debian/control
 
         sed -i "s:Package\: percona-xtradb-cluster-garbd-debug:Package\: percona-xtradb-cluster-garbd-pro-debug:g" debian/control
-        sed -i "s:, percona-xtradb-cluster-garbd-pro-debug:, percona-xtradb-cluster-garbd-debug:g" debian/control
+        sed -i "s:, percona-xtradb-cluster-garbd-pro-debug$:, percona-xtradb-cluster-garbd-debug:g" debian/control
 
         cp debian/percona-xtradb-cluster-client.README.Debian debian/percona-xtradb-cluster-client-pro.README.Debian
         cp debian/percona-xtradb-cluster-client.dirs debian/percona-xtradb-cluster-client-pro.dirs
