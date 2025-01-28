@@ -278,8 +278,8 @@ static inline int wsrep_after_prepare(THD *thd, bool all) {
   assert(wsrep_run_commit_hook(thd, all));
   int ret = thd->wsrep_cs().after_prepare();
   assert(ret == 0 || thd->wsrep_cs().current_error() ||
-              thd->wsrep_cs().transaction().state() ==
-                  wsrep::transaction::s_must_replay);
+         thd->wsrep_cs().transaction().state() ==
+             wsrep::transaction::s_must_replay);
   DBUG_RETURN(ret);
 }
 
@@ -559,11 +559,10 @@ static inline void wsrep_commit_empty(THD *thd, bool all) {
     /* @todo CTAS with STATEMENT binlog format and empty result set
        seems to be committing empty. Figure out why and try to fix
        elsewhere. */
-    assert(!wsrep_has_changes(thd) ||
-                thd->wsrep_stmt_transaction_rolled_back ||
-                (thd->lex->sql_command == SQLCOM_CREATE_TABLE &&
-                 !thd->is_current_stmt_binlog_format_row()) ||
-                thd->wsrep_post_insert_error);
+    assert(!wsrep_has_changes(thd) || thd->wsrep_stmt_transaction_rolled_back ||
+           (thd->lex->sql_command == SQLCOM_CREATE_TABLE &&
+            !thd->is_current_stmt_binlog_format_row()) ||
+           thd->wsrep_post_insert_error);
     bool have_error = wsrep_current_error(thd);
     int ret = wsrep_before_rollback(thd, all) ||
               wsrep_after_rollback(thd, all) || wsrep_after_statement(thd);
