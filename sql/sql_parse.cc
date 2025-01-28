@@ -419,10 +419,10 @@ inline bool check_database_filters(THD *thd, const char *db,
 #ifdef WITH_WSREP
   // This transaction is anyways going to be skipped. So skip the transaction
   // in the async monitor as well
-  if (WSREP(thd) && thd->system_thread == SYSTEM_THREAD_SLAVE_WORKER
-      && !thd->wsrep_applier && !db_ok) {
-    Slave_worker *sw = dynamic_cast<Slave_worker*>(thd->rli_slave);
-    Wsrep_async_monitor *wsrep_async_monitor {sw->get_wsrep_async_monitor()};
+  if (WSREP(thd) && thd->system_thread == SYSTEM_THREAD_SLAVE_WORKER &&
+      !thd->wsrep_applier && !db_ok) {
+    Slave_worker *sw = dynamic_cast<Slave_worker *>(thd->rli_slave);
+    Wsrep_async_monitor *wsrep_async_monitor{sw->get_wsrep_async_monitor()};
     if (wsrep_async_monitor) {
       auto seqno = sw->sequence_number();
       assert(seqno > 0);
@@ -1841,14 +1841,14 @@ static bool block_write_while_in_rolling_upgrade(THD *thd) {
         would not block writes, but for clear flow, let's check if server state
         is initialized, and if it is not yet, do not block writes.
      2. Background wsrep applier (like slave thread) */
-  if (!thd->wsrep_cs().server_state().is_initialized() || (WSREP(thd) && thd->wsrep_applier))
+  if (!thd->wsrep_cs().server_state().is_initialized() ||
+      (WSREP(thd) && thd->wsrep_applier))
     return false;
 
   bool block = false;
   LEX *lex = thd->lex;
   if (sql_command_flags[lex->sql_command] & CF_CHANGES_DATA) {
-    bool multi_version_cluster =
-        wsrep_protocol_version < WsrepVersion::V4;
+    bool multi_version_cluster = wsrep_protocol_version < WsrepVersion::V4;
     if (multi_version_cluster ||
         DBUG_EVALUATE_IF("simulate_wsrep_multiple_major_versions", true,
                          false)) {
@@ -5165,9 +5165,8 @@ int mysql_execute_command(THD *thd, bool first_level) {
            REFRESH_USER_RESOURCES | REFRESH_ERROR_LOG | REFRESH_SLOW_LOG |
            REFRESH_GENERAL_LOG | REFRESH_ENGINE_LOG | REFRESH_RELAY_LOG |
            /* Percona Server specific */
-           REFRESH_TABLE_STATS |
-           REFRESH_INDEX_STATS | REFRESH_USER_STATS | REFRESH_CLIENT_STATS |
-           REFRESH_THREAD_STATS)) {
+           REFRESH_TABLE_STATS | REFRESH_INDEX_STATS | REFRESH_USER_STATS |
+           REFRESH_CLIENT_STATS | REFRESH_THREAD_STATS)) {
         WSREP_TO_ISOLATION_BEGIN_WRTCHK(WSREP_MYSQL_DB, NULL, NULL)
       }
 #endif /* WITH_WSREP */
