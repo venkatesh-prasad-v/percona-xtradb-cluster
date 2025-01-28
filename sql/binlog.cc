@@ -1927,7 +1927,7 @@ bool MYSQL_BIN_LOG::write_transaction(THD *thd, binlog_cache_data *cache_data,
     goto end;
 
   ret = DBUG_EVALUATE_IF("simulate_write_trans_without_gtid", false,
-                              gtid_event.write(writer));
+                         gtid_event.write(writer));
 #else
   bool ret = DBUG_EVALUATE_IF("simulate_write_trans_without_gtid", false,
                               gtid_event.write(writer));
@@ -12545,8 +12545,9 @@ TC_LOG::enum_result wsrep_thd_binlog_commit(THD *thd, bool all) {
     if (all) {
       CONDITIONAL_SYNC_POINT_FOR_TIMESTAMP("before_commit_in_tc");
     }
-    return trx_coordinator::commit_in_engines(thd, all) ? TC_LOG::RESULT_ABORTED
-                                                        : TC_LOG::RESULT_SUCCESS;
+    return trx_coordinator::commit_in_engines(thd, all)
+               ? TC_LOG::RESULT_ABORTED
+               : TC_LOG::RESULT_SUCCESS;
   }
 }
 
