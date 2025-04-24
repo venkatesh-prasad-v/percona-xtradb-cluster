@@ -164,6 +164,24 @@ static int wsrep_write_cache_inc(THD *const thd,
 
   int ret = 0;
   size_t total_length(*len);
+  size_t cache_length(cache->length());
+  uint32_t trx_original_server_version = thd->variables.original_server_version;
+  uint32_t trx_immediate_server_version =
+      do_server_version_int(::server_version);
+  ulonglong original_commit_timestamp = my_micro_time();
+  ulonglong immediate_commit_timestamp = my_micro_time();
+
+  // Here we duplicate the logic of how we set the server version in 
+  // the GTID header in MYSQL_BIN_LOG::write_transaction
+  if (trx_original_server_version == UNDEFINED_SERVER_VERSION) {
+    if (thd->slave_thread || thd->is_binlog_applier()) {
+      trx_original_server_version = UNKNOWN_SERVER_VERSION;
+    } else {
+      trx_original_server_version = trx_immediate_server_version;
+    }
+  } else {
+    thd->variables.original_server_version = UNDEFINED_SERVER_VERSION;
+  }
 
   if (thd->wsrep_gtid_event_buf) {
     if (thd->wsrep_cs().append_data(wsrep::const_buffer(
@@ -176,8 +194,13 @@ static int wsrep_write_cache_inc(THD *const thd,
     commit time. pre-commit hook doesn't have the GTID information.
     If user has set explict GTID using gtid_next=UUID:seqno then such event
     should be appended to write-set. */
-    Gtid_log_event gtid_event(thd, true, 0, 0, false, 0, 0,
-                              UNKNOWN_SERVER_VERSION, UNKNOWN_SERVER_VERSION);
+    Gtid_log_event gtid_event(thd, true, 0, 0, false, original_commit_timestamp,
+                              immediate_commit_timestamp,
+                              trx_original_server_version,
+                              trx_immediate_server_version);
+    fprintf(stderr, "WSREP TRX size: %ld\n", cache_length);
+    gtid_event.set_trx_length_by_cache_size(cache_length);
+
     int error = 0;
     StringBuffer_ostream<Gtid_log_event::get_max_event_length()> ostream;
     if ((error = gtid_event.write(&ostream))) {

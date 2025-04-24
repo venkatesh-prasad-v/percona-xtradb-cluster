@@ -40,6 +40,7 @@ Read_archive_binary &Read_archive_binary::operator>>(Field_type &&arg) {
           Serialization_error_type::archive_read_error);
       return *this;
     }
+    fprintf(stderr, "bytes_read=%zu\n", bytes_read);
     read_pos += bytes_read;
   }
   return *this;

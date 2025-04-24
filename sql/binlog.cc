@@ -1905,6 +1905,7 @@ bool MYSQL_BIN_LOG::write_transaction(THD *thd, binlog_cache_data *cache_data,
       trx_immediate_server_version);
 
   // Set the transaction length, based on cache info
+  fprintf(stderr, "Writing to Binlog TRX size: %lld\n", cache_data->get_byte_position());
   gtid_event.set_trx_length_by_cache_size(cache_data->get_byte_position(),
                                           writer->is_checksum_enabled(),
                                           cache_data->get_event_counter());

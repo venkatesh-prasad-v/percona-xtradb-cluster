@@ -41,6 +41,7 @@ template <class Field_type, Field_size field_size_defined, typename Enabler>
 void Serializer_default<Archive_concrete_type>::decode_field(
     Field_type &field) {
   m_archive >> Field_wrapper<Field_type, field_size_defined>(field);
+  std::cout << "Decoded field_data \"" << field << "\"" << std::endl;
   m_archive.process_field_separator();
 }
 
@@ -381,8 +382,11 @@ void Serializer_default<Archive_concrete_type>::decode(
     return;
   }
   bool is_provided = decode_field_id(level, field_id, field_definition);
+  fprintf(stderr, "Decoded field_id %zu\n", field_id);
   if (is_provided) {
     decode_field<Field_type, field_size_defined>(field_definition.get_ref());
+  } else {
+    fprintf(stderr, "Not able to decode field_data for field_id %zu\n", field_id);
   }
 }
 
@@ -413,11 +417,15 @@ void Serializer_default<Archive_concrete_type>::encode_serializable_metadata(
     bool skip_id) {
   using Serializer_type = Serializer_default<Archive_concrete_type>;
 
+  fprintf(stderr, "begin: encode_serializable_metadata\n");
   uint64_t encoded_size =
       Serializer_type::get_size_serializable(field_id, serializable, skip_id);
+  fprintf(stderr, "encode: encoded_size=%zu\n", encoded_size);
 
   Field_id_type last_non_ignorable_field_id =
       find_last_non_ignorable_field_id(serializable);
+  fprintf(stderr, "encode: last_non_ignorable_field_id=%zu\n",
+          last_non_ignorable_field_id);
 
   if (skip_id == false) {
     m_archive << create_varlen_field_wrapper(field_id);
@@ -427,6 +435,7 @@ void Serializer_default<Archive_concrete_type>::encode_serializable_metadata(
   m_archive.put_field_separator();
   m_archive << create_varlen_field_wrapper(last_non_ignorable_field_id);
   m_archive.put_field_separator();
+  fprintf(stderr, "end: encode_serializable_metadata\n");
 }
 
 template <class Archive_concrete_type>
@@ -435,6 +444,7 @@ std::size_t
 Serializer_default<Archive_concrete_type>::decode_serializable_metadata(
     Level_type, Field_id_type field_id, Serializable_type &serializable,
     bool skip_id) {
+  fprintf(stderr, "begin: decode_serializable_metadata\n");
   uint64_t encoded_size = 0;
   Field_id_type last_non_ignorable_field_id = 0;
   if (skip_id == false) {
@@ -462,6 +472,10 @@ Serializer_default<Archive_concrete_type>::decode_serializable_metadata(
           Serialization_error_type::unknown_field);
     }
   }
+  fprintf(stderr, "decode: decoded_size=%zu\n", encoded_size);
+  fprintf(stderr, "decode: last_non_ignorable_field_id=%zu\n",
+          last_non_ignorable_field_id);
+  fprintf(stderr, "end: decode_serializable_metadata\n");
   return static_cast<std::size_t>(encoded_size);
 }
 
@@ -479,6 +493,7 @@ std::size_t Serializer_default<Archive_concrete_type>::get_size_field_def(
                           field_definition.get_ref()) +
                       size_id_type;
   }
+  fprintf(stderr, "field-id: %zu size=%zu\n", field_id, calculated_size);
   return calculated_size;
 }
 
